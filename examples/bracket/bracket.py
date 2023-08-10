@@ -372,7 +372,7 @@ if __name__ == "__main__":
         eval_with_no_grad=True,
     )
     # train model
-    solver.train()
+    # solver.train()
 
     # evaluate after finished training
     solver.eval()
@@ -389,7 +389,8 @@ if __name__ == "__main__":
         geom=geom,
         validator=validator,
         visualizer=visualizer,
-        pretrained_model_path=f"{OUTPUT_DIR}/checkpoints/latest",
+        # pretrained_model_path=f"{OUTPUT_DIR}/checkpoints/latest",
+        pretrained_model_path="./bracket_pretrained",
     )
     solver.eval()
     # visualize prediction for pretrained model(optional)

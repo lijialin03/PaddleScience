@@ -15,8 +15,11 @@
 import os
 import os.path as osp
 from typing import TYPE_CHECKING
+from typing import Tuple
 
+import numpy as np
 import paddle
+from matplotlib import pyplot as plt
 
 from ppsci.utils import misc
 
@@ -88,3 +91,67 @@ def visualize_func(solver: "solver.Solver", epoch_id: int):
             _visualizer.save(
                 osp.join(visual_dir, _visualizer.prefix), {**all_input, **all_output}
             )
+
+
+class VisualizeLossFig:
+    def __init__(
+        self,
+        by_epoch: bool,
+        loss_keys: Tuple[str, ...],
+        output_dir: str = "./output/",
+        smooth_step: int = 1,
+    ) -> None:
+        self.by_epoch = by_epoch
+        self.loss_keys = loss_keys
+        self.loss_log = []
+        self.loss_log_by_epoch = []
+        self.output_dir = output_dir
+        self.smooth_step = smooth_step
+
+    def update_loss_log(self, loss_dict, is_epoch_loss):
+        if self.by_epoch and is_epoch_loss:
+            loss_log_list = self.loss_log_by_epoch
+        elif not self.by_epoch and not is_epoch_loss:
+            loss_log_list = self.loss_log
+        else:
+            return
+
+        loss_list = []
+        for key in loss_dict:
+            loss_list.append(loss_dict[key])
+        loss_log_list.append(loss_list)
+
+    def plot_loss_fig(self, loss_log_list, figname, smooth_step=1):
+        # how many steps of loss are squeezed to one point, num_points is epoch/smooth_step
+        plt.figure(300, figsize=(8, 6))
+        font = {"weight": "normal", "size": 10}
+
+        loss_log = np.array(loss_log_list)
+        if loss_log.shape[0] % smooth_step != 0:
+            vis_loss = loss_log[: -(loss_log.shape[0] % smooth_step), :].reshape(
+                -1, smooth_step, loss_log.shape[1]
+            )
+        else:
+            vis_loss = loss_log.reshape(-1, smooth_step, loss_log.shape[1])
+
+        for i in range(vis_loss.shape[1]):
+            plt.semilogy(np.arange(vis_loss.shape[0]) * smooth_step, vis_loss[:, i])
+        plt.legend(
+            self.loss_keys,
+            loc="lower left",
+            prop=font,
+        )
+        plt.xlabel(figname, fontdict=font)
+        plt.ylabel("Loss", fontdict=font)
+        plt.grid()
+        plt.yticks(size=10)
+        plt.xticks(size=10)
+        plt.savefig(os.path.join(self.output_dir, f"{figname} Loss.jpg"))
+
+    def vis_epoch_loss(self):
+        if self.by_epoch:
+            self.plot_loss_fig(self.loss_log_by_epoch, "Epoch")
+
+    def vis_iteration_loss(self):
+        if not self.by_epoch:
+            self.plot_loss_fig(self.loss_log, "Iteration", self.smooth_step)

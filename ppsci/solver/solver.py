@@ -37,6 +37,7 @@ from paddle.distributed import fleet
 from typing_extensions import Literal
 
 import ppsci
+from ppsci.solver.visu import VisualizeLossFig
 from ppsci.utils import config
 from ppsci.utils import expression
 from ppsci.utils import logger
@@ -302,6 +303,11 @@ class Solver:
         jit.enable_to_static(to_static)
         logger.info(f"Set to_static={to_static} for forward computation.")
 
+        # visualize losses
+        self.vis_loss = VisualizeLossFig(
+            True, ("loss",) + tuple(self.constraint.keys()), output_dir
+        )
+
     @staticmethod
     def from_config(cfg: Dict[str, Any]) -> Solver:
         """Initialize solver from given config.
@@ -465,6 +471,9 @@ class Solver:
         # close VisualDL
         if self.vdl_writer is not None:
             self.vdl_writer.close()
+
+        # vis loss log
+        self.vis_loss.vis_epoch_loss()
 
     @misc.run_on_eval_mode
     def eval(self, epoch_id: int = 0) -> float:
