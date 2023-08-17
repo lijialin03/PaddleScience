@@ -57,5 +57,5 @@ class FunctionalLoss(base.Loss):
         super().__init__(reduction, weight)
         self.loss_expr = loss_expr
 
-    def forward(self, output_dict, label_dict=None, weight_dict=None):
-        return self.loss_expr(output_dict, label_dict, weight_dict)
+    def forward(self, output_dict, label_dict=None, weight_dict=None, input_dict=None):
+        return self.loss_expr(output_dict, label_dict, weight_dict, input_dict)

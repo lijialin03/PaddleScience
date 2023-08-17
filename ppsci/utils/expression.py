@@ -21,6 +21,8 @@ from typing import Tuple
 from paddle import jit
 from paddle import nn
 
+import ppsci
+
 if TYPE_CHECKING:
     import paddle
     from ppsci import constraint
@@ -98,11 +100,19 @@ class ExpressionSolver(nn.Layer):
         # compute loss for each constraint according to its' own output, label and weight
         constraint_losses = []
         for i, _constraint in enumerate(constraint.values()):
-            constraint_loss = _constraint.loss(
-                output_dicts[i],
-                label_dicts[i],
-                weight_dicts[i],
-            )
+            if isinstance(_constraint.loss, ppsci.loss.FunctionalLoss):
+                constraint_loss = _constraint.loss(
+                    output_dicts[i],
+                    label_dicts[i],
+                    weight_dicts[i],
+                    input_dicts[i],
+                )
+            else:
+                constraint_loss = _constraint.loss(
+                    output_dicts[i],
+                    label_dicts[i],
+                    weight_dicts[i],
+                )
             constraint_losses.append(constraint_loss)
         return constraint_losses
 

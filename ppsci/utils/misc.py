@@ -327,16 +327,18 @@ def plot_losses_fig(
 
     if by_epoch:
         loss_arr = np.mean(
-            loss_arr.reshape(-1, iters_per_epoch, loss_arr.shape[1]), axis=1
+            np.reshape(loss_arr, (-1, iters_per_epoch, loss_arr.shape[1])), axis=1
         )
 
     # smooth
     if loss_arr.shape[0] % smooth_step != 0:
-        vis_loss = loss_arr[: -(loss_arr.shape[0] % smooth_step), :].reshape(
-            -1, smooth_step, loss_arr.shape[1]
+        vis_loss = np.reshape(
+            loss_arr[: -(loss_arr.shape[0] % smooth_step), :],
+            (-1, smooth_step, loss_arr.shape[1]),
         )
     else:
-        vis_loss = loss_arr.reshape(-1, smooth_step, loss_arr.shape[1])
+        vis_loss = np.reshape(loss_arr, (-1, smooth_step, loss_arr.shape[1]))
+    vis_loss = np.mean(vis_loss, axis=1)
 
     # plot
     plt.figure()
