@@ -8,18 +8,20 @@ if __name__ == "__main__":
     args = config.parse_args()
     SEED = 2023
     ppsci.utils.misc.set_random_seed(SEED)
-    OUTPUT_DIR = "./output_chassis/" if args.output_dir is None else args.output_dir
+    OUTPUT_DIR = "./output_extend/" if args.output_dir is None else args.output_dir
 
     # initialize logger
     logger.init_logger("ppsci", f"{OUTPUT_DIR}/train.log", "info")
 
     # params for test
-    LR = 1e-4
+    loss_str = "mean"
+    LR = 1e-3
     ITERS_PER_EPOCH = 100
-    EPOCHS = 2000
+    EPOCHS = 200
     DEEP = 6
     WIDTH = 512
-    plt_name = "ori_test_loss_log"
+    plt_name = "vis1_0"
+    pretrained_model_path = "./saved_model/control_arm_2_7/epoch_2000"
 
     # set model
     disp_net = ppsci.arch.MLP(
@@ -41,13 +43,17 @@ if __name__ == "__main__":
     E = 100.0e9  # 弹性模量
     LAMBDA_ = NU * E / ((1 + NU) * (1 - 2 * NU))  # lambda 拉梅常数之一
     MU = E / (2 * (1 + NU))  # mu 拉梅常数之一
-    MU_C = 0.01 * MU  # 给定条件：无量纲剪切模量
-    LAMBDA_ = LAMBDA_ / MU_C  # 无量纲化，即去掉单位
-    MU = MU / MU_C  # 无量纲化，即去掉单位
-    CHARACTERISTIC_LENGTH = 1  # 给定条件：特征长度
-    CHARACTERISTIC_DISPLACEMENT = 1.0e-4  # 给定条件：特征位移
-    SIGMA_NORMALIZATION = CHARACTERISTIC_LENGTH / (CHARACTERISTIC_DISPLACEMENT * MU_C)
-    T = -4.0e4 * SIGMA_NORMALIZATION  # 牵引力大小
+    # MU_C = 0.01 * MU  # 给定条件：无量纲剪切模量
+    # LAMBDA_ = LAMBDA_ / MU_C  # 无量纲化，即去掉单位
+    # MU = MU / MU_C  # 无量纲化，即去掉单位
+    # CHARACTERISTIC_LENGTH = 1  # 给定条件：特征长度
+    # CHARACTERISTIC_DISPLACEMENT = 1.0e-4  # 给定条件：特征位移
+    # SIGMA_NORMALIZATION = CHARACTERISTIC_LENGTH / (CHARACTERISTIC_DISPLACEMENT * MU_C)
+    # T = -4.0e4 * SIGMA_NORMALIZATION  # 牵引力大小
+    T = -100  # 牵引力大小
+
+    LAMBDA_ = LAMBDA_ / MU
+    MU = 1.0
 
     # set equation
     equation = {
@@ -88,9 +94,9 @@ if __name__ == "__main__":
         {"u": 0, "v": 0, "w": 0},
         geom["geo"],
         {**train_dataloader_cfg, "batch_size": 128},
-        ppsci.loss.MSELoss("sum"),
+        ppsci.loss.MSELoss(loss_str),
         criteria=lambda x, y, z: x == CHASSIS_ORIGIN[0],
-        weight_dict={"u": 10, "v": 10, "w": 10},
+        weight_dict={"u": 100, "v": 100, "w": 100},
         name="BC_BACK",
     )
     bc_front = ppsci.constraint.BoundaryConstraint(
@@ -98,7 +104,7 @@ if __name__ == "__main__":
         {"traction_x": 0, "traction_y": 0, "traction_z": T},
         geom["geo"],
         {**train_dataloader_cfg, "batch_size": 128},
-        ppsci.loss.MSELoss("sum"),
+        ppsci.loss.MSELoss(loss_str),
         criteria=lambda x, y, z: x == CHASSIS_ORIGIN[0] + CHASSIS_DIM[0],
         name="BC_FRONT",
     )
@@ -106,8 +112,8 @@ if __name__ == "__main__":
         equation["LinearElasticity"].equations,
         {"traction_x": 0, "traction_y": 0, "traction_z": 0},
         geom["geo"],
-        {**train_dataloader_cfg, "batch_size": 4096},
-        ppsci.loss.MSELoss("sum"),
+        {**train_dataloader_cfg, "batch_size": 2048},
+        ppsci.loss.MSELoss(loss_str),
         criteria=lambda x, y, z: np.logical_and(
             x > CHASSIS_ORIGIN[0] + 1e-7, x < CHASSIS_ORIGIN[0] + CHASSIS_DIM[0] - 1e-7
         ),
@@ -120,7 +126,7 @@ if __name__ == "__main__":
     #     {"u": 0, "v": 0, "w": 0},
     #     geom["geo"],
     #     {**train_dataloader_cfg, "batch_size": 1024},
-    #     ppsci.loss.MSELoss("sum"),
+    #     ppsci.loss.MSELoss(loss_str),
     #     criteria=lambda x, y, z: y == CHASSIS_ORIGIN[1],
     #     weight_dict={"u": 10, "v": 10, "w": 10},
     #     name="BC_BACK",
@@ -130,7 +136,7 @@ if __name__ == "__main__":
     #     {"traction_x": 0, "traction_y": 0, "traction_z": T},
     #     geom["geo"],
     #     {**train_dataloader_cfg, "batch_size": 128},
-    #     ppsci.loss.MSELoss("sum"),
+    #     ppsci.loss.MSELoss(loss_str),
     #     criteria=lambda x, y, z: y == CHASSIS_ORIGIN[1] + CHASSIS_DIM[1],
     #     name="BC_FRONT",
     # )
@@ -139,7 +145,7 @@ if __name__ == "__main__":
     #     {"traction_x": 0, "traction_y": 0, "traction_z": 0},
     #     geom["geo"],
     #     {**train_dataloader_cfg, "batch_size": 4096},
-    #     ppsci.loss.MSELoss("sum"),
+    #     ppsci.loss.MSELoss(loss_str),
     #     criteria=lambda x, y, z: np.logical_and(
     #         y > CHASSIS_ORIGIN[1] + 1e-7, y < CHASSIS_ORIGIN[1] + CHASSIS_DIM[1] - 1e-7
     #     ),
@@ -161,7 +167,7 @@ if __name__ == "__main__":
         },
         geom["geo"],
         {**train_dataloader_cfg, "batch_size": 2048},
-        ppsci.loss.MSELoss("sum"),
+        ppsci.loss.MSELoss(loss_str),
         criteria=lambda x, y, z: (
             (CHASSIS_X[0] < x)
             & (x < CHASSIS_X[1])
@@ -249,7 +255,7 @@ if __name__ == "__main__":
     }
     sup_validator = ppsci.validate.SupervisedValidator(
         {**eval_dataloader_cfg, "batch_size": 128},
-        ppsci.loss.MSELoss("sum"),
+        ppsci.loss.MSELoss(loss_str),
         {
             "u": lambda out: out["u"],
             "v": lambda out: out["v"],
@@ -294,19 +300,23 @@ if __name__ == "__main__":
         lr_scheduler,
         EPOCHS,
         ITERS_PER_EPOCH,
-        save_freq=20,
-        log_freq=20,
+        save_freq=500,
+        log_freq=500,
         eval_during_train=False,
-        eval_freq=20,
+        eval_freq=500,
         seed=SEED,
         equation=equation,
         geom=geom,
         validator=validator,
         visualizer=visualizer,
         eval_with_no_grad=True,
+        # pretrained_model_path=pretrained_model_path,
     )
     # train model
     solver.train()
+
+    # plot losses
+    solver.plot_losses(by_epoch=True, smooth_step=1)
 
     # evaluate after finished training
     # solver.eval()

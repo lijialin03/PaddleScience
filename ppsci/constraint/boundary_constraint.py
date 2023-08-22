@@ -31,6 +31,8 @@ from ppsci.data import dataset
 if TYPE_CHECKING:
     from ppsci import loss
 
+# from ppsci import visualize
+
 
 class BoundaryConstraint(base.Constraint):
     """Class for boundary constraint.
@@ -108,6 +110,14 @@ class BoundaryConstraint(base.Constraint):
         )
         if "area" in input:
             input["area"] *= dataloader_cfg["iters_per_epoch"]
+
+        # # visualize input
+        # vis = visualize.VisualizerVtu(
+        #     {"x": [], "y": [], "z": []},
+        #     {key: lambda out, k=key: out[k] for key in input},
+        # )
+        # print(vis.input_keys)
+        # vis.save(name, input)
 
         # prepare label
         label = {}
