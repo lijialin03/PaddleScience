@@ -100,7 +100,8 @@ def load_checkpoint(
 
     # set state dict
     model.set_state_dict(param_dict)
-    optimizer.set_state_dict(optim_dict)
+    if optimizer:
+        optimizer.set_state_dict(optim_dict)
     if grad_scaler is not None:
         grad_scaler.load_state_dict(scaler_dict)
     if equation is not None and equation_dict is not None:

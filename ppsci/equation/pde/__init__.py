@@ -16,6 +16,7 @@ from ppsci.equation.pde.base import PDE
 from ppsci.equation.pde.biharmonic import Biharmonic
 from ppsci.equation.pde.laplace import Laplace
 from ppsci.equation.pde.linear_elasticity_bak import LinearElasticity
+from ppsci.equation.pde.linear_elasticity_v2 import LinearElasticity_v2
 from ppsci.equation.pde.navier_stokes import NavierStokes
 from ppsci.equation.pde.normal_dot_vec import NormalDotVec
 from ppsci.equation.pde.poisson import Poisson
@@ -26,6 +27,7 @@ __all__ = [
     "Biharmonic",
     "Laplace",
     "LinearElasticity",
+    "LinearElasticity_v2",
     "NavierStokes",
     "NormalDotVec",
     "Poisson",

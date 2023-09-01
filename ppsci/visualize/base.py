@@ -39,7 +39,8 @@ class Visualizer:
         prefix: str,
     ):
         self.input_dict = input_dict
-        self.input_keys = tuple(input_dict.keys())
+        # self.input_keys = tuple(input_dict.keys())
+        self.input_keys = ("x", "y", "z")
         self.output_expr = output_expr
         self.output_keys = tuple(output_expr.keys())
         self.batch_size = batch_size

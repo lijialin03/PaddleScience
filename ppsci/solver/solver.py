@@ -300,8 +300,9 @@ class Solver:
 
         # recode losses
         self.losses_dict = {"loss": []}
-        for key in self.constraint.keys():
-            self.losses_dict[key] = []
+        if constraint:
+            for key in self.constraint.keys():
+                self.losses_dict[key] = []
 
     @staticmethod
     def from_config(cfg: Dict[str, Any]) -> Solver:
@@ -429,6 +430,8 @@ class Solver:
                 logger.info(
                     f"[Eval][Epoch {epoch_id}]"
                     f"[best metric: {self.best_metric['metric']}]"
+                    f"[best epoch: {self.best_metric['epoch']}]"
+                    f"[current metric: {cur_metric}]"
                 )
                 logger.scaler("eval_metric", cur_metric, epoch_id, self.vdl_writer)
 

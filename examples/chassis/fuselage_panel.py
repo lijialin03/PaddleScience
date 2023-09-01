@@ -24,9 +24,7 @@ if __name__ == "__main__":
     ppsci.utils.misc.set_random_seed(SEED)
     np.random.seed(SEED)
     # set output directory
-    OUTPUT_DIR = (
-        "./output_fuselage_panel_test" if not args.output_dir else args.output_dir
-    )
+    OUTPUT_DIR = "./output_fuselage_panel" if not args.output_dir else args.output_dir
     # initialize logger
     logger.init_logger("ppsci", f"{OUTPUT_DIR}/train.log", "info")
 
@@ -150,12 +148,13 @@ if __name__ == "__main__":
     model = elasticity_net
 
     # set training hyper-parameters
-    ITERS_PER_EPOCH = 10
-    EPOCHS = 200 if not args.epochs else args.epochs
+    use_para = True
+    ITERS_PER_EPOCH = 1000
+    EPOCHS = 1000 if not args.epochs else args.epochs
     lr_scheduler = ppsci.optimizer.lr_scheduler.ExponentialDecay(
         EPOCHS,
         ITERS_PER_EPOCH,
-        0.001,
+        0.004,
         0.95,
         15000,
         by_epoch=False,
@@ -293,6 +292,10 @@ if __name__ == "__main__":
         name="HIGH_RES_INTERIOR",
     )
 
+    # re-assign to ITERS_PER_EPOCH
+    if use_para:
+        ITERS_PER_EPOCH = len(panel_left_constraint.data_loader)
+
     # wrap constraints together
     constraint = {
         panel_left_constraint.name: panel_left_constraint,
@@ -351,12 +354,13 @@ if __name__ == "__main__":
         # validator=validator,
         visualizer=visualizer,
         # eval_with_no_grad=True,
-        pretrained_model_path=f"{OUTPUT_DIR}/checkpoints/latest",
+        # pretrained_model_path=f"{OUTPUT_DIR}/checkpoints/latest",
+        checkpoint_path=f"{OUTPUT_DIR}/checkpoints/latest",
     )
     # train model
-    # solver.train()
+    solver.train()
     # plot losses
-    # solver.plot_losses(by_epoch=True, smooth_step=10)
+    solver.plot_losses(by_epoch=True, smooth_step=10)
 
     # evaluate after finished training
     # solver.eval()
