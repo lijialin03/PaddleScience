@@ -201,3 +201,48 @@ class ExpressionSolver(nn.Layer):
             clear()
 
         return output_dict
+
+    def run_forward(
+        self,
+        expr_dicts: Tuple[Dict[str, Callable], ...],
+        input_dicts: Tuple[Dict[str, "paddle.Tensor"], ...],
+        model: nn.Layer,
+        label_dicts: Tuple[Dict[str, "paddle.Tensor"], ...],
+    ) -> Tuple["paddle.Tensor", ...]:
+        """Forward computation for training, including model forward and equation
+        forward.
+
+        Args:
+            expr_dicts (Tuple[Dict[str, Callable], ...]): Tuple of expression dicts.
+            input_dicts (Tuple[Dict[str, paddle.Tensor], ...]): Tuple of input dicts.
+            model (nn.Layer): NN model.
+            constraint (Dict[str, "constraint.Constraint"]): Constraint dict.
+            label_dicts (Tuple[Dict[str, paddle.Tensor], ...]): Tuple of label dicts.
+            weight_dicts (Tuple[Dict[str, paddle.Tensor], ...]): Tuple of weight dicts.
+
+        Returns:
+            Tuple[paddle.Tensor, ...]: Tuple of output for each expression.
+        """
+        output_dicts = []
+        for i, expr_dict in enumerate(expr_dicts):
+            # model forward
+            if callable(next(iter(expr_dict.values()))):
+                output_dict = model(input_dicts[i])
+
+            # equation forward
+            for name, expr in expr_dict.items():
+                if name not in label_dicts[i]:
+                    continue
+                if callable(expr):
+                    output_dict[name] = expr({**output_dict, **input_dicts[i]})
+                else:
+                    raise TypeError(f"expr type({type(expr)}) is invalid")
+
+            # put field 'area' into output_dict
+            if "area" in input_dicts[i]:
+                output_dict["area"] = input_dicts[i]["area"]
+            output_dicts.append(output_dict)
+
+            # clear differentiation cache
+            clear()
+        return output_dicts

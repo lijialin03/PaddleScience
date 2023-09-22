@@ -110,6 +110,7 @@ class BoundaryConstraint(base.Constraint):
         )
         if "area" in input:
             input["area"] *= dataloader_cfg["iters_per_epoch"]
+        # print(input)
 
         # # visualize input
         # vis = visualize.VisualizerVtu(

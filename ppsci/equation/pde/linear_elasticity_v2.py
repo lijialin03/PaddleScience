@@ -114,41 +114,40 @@ class LinearElasticity_v2(base.PDE):
                 self.u__x = jacobian(out["u"], out["x"])
             if self.u__y is None:
                 self.u__y = jacobian(out["u"], out["y"])
-            if self.u__z is None:
-                self.u__z = jacobian(out["u"], out["z"])
-
             if self.v__x is None:
                 self.v__x = jacobian(out["v"], out["x"])
             if self.v__y is None:
                 self.v__y = jacobian(out["v"], out["y"])
-            if self.v__z is None:
-                self.v__z = jacobian(out["v"], out["z"])
-
-            if self.w__x is None:
-                self.w__x = jacobian(out["w"], out["x"])
-            if self.w__y is None:
-                self.w__y = jacobian(out["w"], out["y"])
-            if self.w__z is None:
-                self.w__z = jacobian(out["w"], out["z"])
-
             if self.sigma_xx__x is None:
                 self.sigma_xx__x = jacobian(out["sigma_xx"], out["x"])
             if self.sigma_xy__x is None:
                 self.sigma_xy__x = jacobian(out["sigma_xy"], out["x"])
-            if self.sigma_xz__x is None:
-                self.sigma_xz__x = jacobian(out["sigma_xz"], out["x"])
             if self.sigma_xy__y is None:
                 self.sigma_xy__y = jacobian(out["sigma_xy"], out["y"])
             if self.sigma_yy__y is None:
                 self.sigma_yy__y = jacobian(out["sigma_yy"], out["y"])
-            if self.sigma_yz__y is None:
-                self.sigma_yz__y = jacobian(out["sigma_yz"], out["y"])
-            if self.sigma_xz__z is None:
-                self.sigma_xz__z = jacobian(out["sigma_xz"], out["z"])
-            if self.sigma_yz__z is None:
-                self.sigma_yz__z = jacobian(out["sigma_yz"], out["z"])
-            if self.sigma_zz__z is None:
-                self.sigma_zz__z = jacobian(out["sigma_zz"], out["z"])
+
+            if self.dim == 3:
+                if self.u__z is None:
+                    self.u__z = jacobian(out["u"], out["z"])
+                if self.v__z is None:
+                    self.v__z = jacobian(out["v"], out["z"])
+                if self.w__x is None:
+                    self.w__x = jacobian(out["w"], out["x"])
+                if self.w__y is None:
+                    self.w__y = jacobian(out["w"], out["y"])
+                if self.w__z is None:
+                    self.w__z = jacobian(out["w"], out["z"])
+                if self.sigma_xz__x is None:
+                    self.sigma_xz__x = jacobian(out["sigma_xz"], out["x"])
+                if self.sigma_yz__y is None:
+                    self.sigma_yz__y = jacobian(out["sigma_yz"], out["y"])
+                if self.sigma_xz__z is None:
+                    self.sigma_xz__z = jacobian(out["sigma_xz"], out["z"])
+                if self.sigma_yz__z is None:
+                    self.sigma_yz__z = jacobian(out["sigma_yz"], out["z"])
+                if self.sigma_zz__z is None:
+                    self.sigma_zz__z = jacobian(out["sigma_zz"], out["z"])
 
         # Stress equations
         def stress_disp_xx_compute_func(out):

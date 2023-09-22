@@ -18,6 +18,7 @@ from ppsci.equation.fpde import FractionalPoisson
 from ppsci.equation.ide import Volterra
 from ppsci.equation.pde import PDE
 from ppsci.equation.pde import Biharmonic
+from ppsci.equation.pde import EnergyEquation
 from ppsci.equation.pde import Laplace
 from ppsci.equation.pde import LinearElasticity
 from ppsci.equation.pde import LinearElasticity_v2
@@ -31,6 +32,7 @@ from ppsci.utils import misc
 __all__ = [
     "PDE",
     "Biharmonic",
+    "EnergyEquation",
     "Laplace",
     "LinearElasticity",
     "LinearElasticity_v2",

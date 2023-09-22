@@ -14,6 +14,7 @@
 
 from ppsci.equation.pde.base import PDE
 from ppsci.equation.pde.biharmonic import Biharmonic
+from ppsci.equation.pde.energy_equation import EnergyEquation
 from ppsci.equation.pde.laplace import Laplace
 from ppsci.equation.pde.linear_elasticity_bak import LinearElasticity
 from ppsci.equation.pde.linear_elasticity_v2 import LinearElasticity_v2
@@ -25,6 +26,7 @@ from ppsci.equation.pde.viv import Vibration
 __all__ = [
     "PDE",
     "Biharmonic",
+    "EnergyEquation",
     "Laplace",
     "LinearElasticity",
     "LinearElasticity_v2",

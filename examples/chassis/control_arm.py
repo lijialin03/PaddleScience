@@ -17,17 +17,10 @@ if __name__ == "__main__":
 
     # Specify parameters
     NU = 0.3  # 泊松比
-    E = 100.0e9  # 弹性模量
+    E = 1  # 弹性模量
     LAMBDA_ = NU * E / ((1 + NU) * (1 - 2 * NU))  # lambda 拉梅常数之一
     MU = E / (2 * (1 + NU))  # mu 拉梅常数之一
-    # MU_C = 0.01 * MU  # 给定条件：无量纲剪切模量
-    # LAMBDA_ = LAMBDA_ / MU_C  # 无量纲化，即去掉单位
-    # MU = MU / MU_C  # 无量纲化，即去掉单位
-    T = -100  # 牵引力大小
-
-    LAMBDA_ = LAMBDA_ / MU
-    MU = 1.0
-    # print("LAMBDA_:", LAMBDA_, ", MU:", MU)
+    T = -0.0025  # 牵引力大小
 
     # set equation
     equation = {
@@ -35,12 +28,6 @@ if __name__ == "__main__":
             E=None, nu=None, lambda_=LAMBDA_, mu=MU, dim=3
         )
     }
-    # equation = {
-    #     "LinearElasticity": ppsci.equation.LinearElasticity_v2(
-    #         param_dict={"lambda_": LAMBDA_, "mu": MU},
-    #         dim=3,
-    #     )
-    # }
 
     # set geometry
     control_arm = ppsci.geometry.Mesh("./datasets/stl/control_arm.stl")
@@ -57,18 +44,12 @@ if __name__ == "__main__":
     # print(control_arm.bounds)
     BOUNDS_X, BOUNDS_Y, BOUNDS_Z = control_arm.bounds
 
-    # CHARACTERISTIC_LENGTH = CIRCLE_RADIUS * 2  # 给定条件：特征长度
-    # CHARACTERISTIC_DISPLACEMENT = 1.0e-4  # 给定条件：特征位移
-    # SIGMA_NORMALIZATION = CHARACTERISTIC_LENGTH / (CHARACTERISTIC_DISPLACEMENT * MU_C)
-    # T = T * SIGMA_NORMALIZATION  # 牵引力大小
-    # print("T", T)
-
     # set training hyper-parameters
     # MARK
     loss_str = "mean"
     LR = 4e-3
-    ITERS_PER_EPOCH = 100
-    EPOCHS = 200
+    ITERS_PER_EPOCH = 1000
+    EPOCHS = 2000
     DEEP = 6
     WIDTH = 512
     plt_name = "vis"
@@ -138,7 +119,7 @@ if __name__ == "__main__":
             + np.square(z - CIRCLE_RIGHT_CENTER_XZ[1])
         )
         <= CIRCLE_RIGHT_RADIUS + 1e-1,
-        weight_dict={"u": 100, "v": 100, "w": 100},
+        weight_dict={"u": 10, "v": 10, "w": 10},
         name="BC_RIGHT",
     )
     # arm_surface_constraint = ppsci.constraint.BoundaryConstraint(

@@ -91,12 +91,25 @@ def train_epoch_func(solver: "solver.Solver", epoch_id: int, log_freq: int):
                     total_loss = total_loss / solver.update_freq
                 loss_dict["loss"] = float(total_loss)
 
+            # for name, tensor in solver.model.named_parameters():
+            #     if name == "linears.5.linear.bias":
+            #         print(name, tensor.grad)
             # backward
             if solver.use_amp:
                 total_loss_scaled = solver.scaler.scale(total_loss)
                 total_loss_scaled.backward()
             else:
                 total_loss.backward()
+                # print("total_loss:", total_loss)
+
+            # for name, tensor in solver.model.named_parameters():
+            #     if name == "linears.5.linear.bias":
+            #         print(name, tensor.numpy())
+            #         print(name, tensor.grad.numpy())
+
+            # if solver.custom_gradients is not None:
+            #     # print("change gradient")
+            #     solver.custom_gradients(solver,loss_dict)
 
             # record losses
             for key in loss_dict:
@@ -113,6 +126,10 @@ def train_epoch_func(solver: "solver.Solver", epoch_id: int, log_freq: int):
             else:
                 solver.optimizer.step()
             solver.optimizer.clear_grad()
+
+        # for name, tensor in solver.model.named_parameters():
+        #     if name == "linears.5.linear.bias":
+        #         print(name, tensor)
 
         # update learning rate by step
         if solver.lr_scheduler is not None and not solver.lr_scheduler.by_epoch:
@@ -221,3 +238,70 @@ def train_LBFGS_epoch_func(solver: "solver.Solver", epoch_id: int, log_freq: int
             printer.log_train_info(solver, total_batch_size, epoch_id, iter_id)
 
         batch_tic = time.perf_counter()
+
+
+def train_forward(solver: "solver.Solver"):
+    input_dicts_list = []
+    label_dicts_list = []
+    weight_dicts_list = []
+    output_dicts_list = []
+    for _ in range(1, solver.iters_per_epoch + 1):
+        loss_dict = misc.Prettydefaultdict(float)
+        loss_dict["loss"] = 0.0
+
+        input_dicts = []
+        label_dicts = []
+        weight_dicts = []
+        for _, _constraint in solver.constraint.items():
+            input_dict, label_dict, weight_dict = next(_constraint.data_iter)
+            for v in input_dict.values():
+                v.stop_gradient = False
+
+            # gather each constraint's input, label, weight to a list
+            input_dicts.append(input_dict)
+            label_dicts.append(label_dict)
+            weight_dicts.append(weight_dict)
+
+        output_dicts = solver.forward_helper.run_forward(
+            (_constraint.output_expr for _constraint in solver.constraint.values()),
+            input_dicts,
+            solver.model,
+            label_dicts,
+        )
+        input_dicts_list.append(input_dicts)
+        label_dicts_list.append(label_dicts)
+        weight_dicts_list.append(weight_dicts)
+        output_dicts_list.append(output_dicts)
+    return input_dicts_list, label_dicts_list, weight_dicts_list, output_dicts_list
+
+
+def train_backward(solver: "solver.Solver", total_loss_list):
+    for iter_id in range(1, solver.iters_per_epoch + 1):
+        # compute loss for each constraint according to its' own output, label and weight
+        total_loss = total_loss_list[iter_id - 1]
+        if solver.use_amp:
+            total_loss_scaled = solver.scaler.scale(total_loss)
+            total_loss_scaled.backward()
+        else:
+            total_loss.backward()
+
+        # update parameters
+        if iter_id % solver.update_freq == 0 or iter_id == solver.iters_per_epoch:
+            if solver.world_size > 1:
+                # fuse + allreduce manually before optimization if use DDP + no_sync
+                # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
+                hpu.fused_allreduce_gradients(list(solver.model.parameters()), None)
+            if solver.use_amp:
+                solver.scaler.minimize(solver.optimizer, total_loss_scaled)
+            else:
+                solver.optimizer.step()
+            solver.optimizer.clear_grad()
+
+        # update learning rate by step
+        if solver.lr_scheduler is not None and not solver.lr_scheduler.by_epoch:
+            solver.lr_scheduler.step()
+
+        # update and log training information
+        solver.global_step += 1
+        # if iter_id == 1 or iter_id % log_freq == 0:
+        #     printer.log_train_info(solver, total_batch_size, epoch_id, iter_id)

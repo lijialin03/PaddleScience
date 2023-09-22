@@ -136,6 +136,7 @@ class Solver:
         compute_metric_by_batch: bool = False,
         eval_with_no_grad: bool = False,
         to_static: bool = False,
+        custom_gradients: Optional[Callable] = None,
     ):
         # set model
         self.model = model
@@ -303,6 +304,8 @@ class Solver:
         if constraint:
             for key in self.constraint.keys():
                 self.losses_dict[key] = []
+
+        self.custom_gradients = custom_gradients
 
     @staticmethod
     def from_config(cfg: Dict[str, Any]) -> Solver:
@@ -694,3 +697,111 @@ class Solver:
             self.iters_per_epoch,
             smooth_step,
         )
+
+    def train_batch(self):
+        """Training."""
+        self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
+
+        for epoch_id in range(self.best_metric["epoch"] + 1, self.epochs + 1):
+            # forward
+            (
+                input_dicts_list,
+                label_dicts_list,
+                weight_dicts_list,
+                output_dicts_list,
+            ) = ppsci.solver.train.train_forward(self)
+
+            # batch loss
+            constraint_losses_list = []
+            for _, _constraint in enumerate(self.constraint.values()):
+                if not isinstance(_constraint.loss, ppsci.loss.FunctionalLossBatch):
+                    raise TypeError(
+                        "Loss function of constraint should be FunctionalLossBatch when using train_batch"
+                    )
+                constraint_loss_list = _constraint.loss(
+                    output_dicts_list,
+                    label_dicts_list,
+                    weight_dicts_list,
+                    input_dicts_list,
+                )
+                constraint_losses_list.append(constraint_loss_list)
+
+            total_loss_list = []
+            for iter in range(self.iters_per_epoch):
+                total_loss = 0
+                for i, _constraint in enumerate(self.constraint.values()):
+                    total_loss += constraint_losses_list[i][iter]
+                total_loss_list.append(total_loss)
+
+            # backward
+            ppsci.solver.train.train_backward(self, total_loss_list)
+
+            # log training summation at end of a epoch
+            metric_msg = ", ".join(
+                [self.train_output_info[key].avg_info for key in self.train_output_info]
+            )
+            logger.info(f"[Train][Epoch {epoch_id}/{self.epochs}][Avg] {metric_msg}")
+            self.train_output_info.clear()
+
+            cur_metric = float("inf")
+            # evaluate during training
+            if (
+                self.eval_during_train
+                and epoch_id % self.eval_freq == 0
+                and epoch_id >= self.start_eval_epoch
+            ):
+                cur_metric = self.eval(epoch_id)
+                if cur_metric < self.best_metric["metric"]:
+                    self.best_metric["metric"] = cur_metric
+                    self.best_metric["epoch"] = epoch_id
+                    save_load.save_checkpoint(
+                        self.model,
+                        self.optimizer,
+                        self.scaler,
+                        self.best_metric,
+                        self.output_dir,
+                        "best_model",
+                        self.equation,
+                    )
+                logger.info(
+                    f"[Eval][Epoch {epoch_id}]"
+                    f"[best metric: {self.best_metric['metric']}]"
+                    f"[best epoch: {self.best_metric['epoch']}]"
+                    f"[current metric: {cur_metric}]"
+                )
+                logger.scaler("eval_metric", cur_metric, epoch_id, self.vdl_writer)
+
+                # visualize after evaluation
+                if self.visualizer is not None:
+                    self.visualize(epoch_id)
+
+            # update learning rate by epoch
+            if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
+                self.lr_scheduler.step()
+
+            # save epoch model every save_freq epochs
+            if self.save_freq > 0 and epoch_id % self.save_freq == 0:
+                save_load.save_checkpoint(
+                    self.model,
+                    self.optimizer,
+                    self.scaler,
+                    {"metric": cur_metric, "epoch": epoch_id},
+                    self.output_dir,
+                    f"epoch_{epoch_id}",
+                    self.equation,
+                )
+
+            # save the latest model for convenient resume training
+            save_load.save_checkpoint(
+                self.model,
+                self.optimizer,
+                self.scaler,
+                {"metric": cur_metric, "epoch": epoch_id},
+                self.output_dir,
+                "latest",
+                self.equation,
+            )
+
+        # close VisualDL
+        if self.vdl_writer is not None:
+            self.vdl_writer.close()

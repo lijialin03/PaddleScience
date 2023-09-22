@@ -59,3 +59,29 @@ class FunctionalLoss(base.Loss):
 
     def forward(self, output_dict, label_dict=None, weight_dict=None, input_dict=None):
         return self.loss_expr(output_dict, label_dict, weight_dict, input_dict)
+
+
+class FunctionalLossBatch(base.Loss):
+    def __init__(
+        self,
+        loss_expr: Callable,
+        reduction: Literal["mean", "sum"] = "mean",
+        weight: Optional[Union[float, Dict[str, float]]] = None,
+    ):
+        if reduction not in ["mean", "sum"]:
+            raise ValueError(
+                f"reduction should be 'mean' or 'sum', but got {reduction}"
+            )
+        super().__init__(reduction, weight)
+        self.loss_expr = loss_expr
+
+    def forward(
+        self,
+        output_dicts_list,
+        label_dicts_list=None,
+        weight_dicts_list=None,
+        input_dicts_list=None,
+    ):
+        return self.loss_expr(
+            output_dicts_list, label_dicts_list, weight_dicts_list, input_dicts_list
+        )
