@@ -40,6 +40,7 @@ class Problems:
         elif self.dim == 3:
             return self.geo_dim[0] * self.geo_dim[1] * self.geo_dim[2]
 
+    # transforms
     def transform_in(self, _in):
         x, y = _in["x"], _in["y"]
         x_scaled = 2.0 / self.geo_dim[0] * x + (
@@ -71,7 +72,7 @@ class Problems:
 
     def transform_out_disp(self, _in, _out):
         "Different for each problems because of different boundary constraints."
-        return {}
+        return _out
 
     def transform_out_density(self, _in, _out):
         density = _out["density"]
@@ -79,6 +80,7 @@ class Problems:
         densities = F.sigmoid(self.alpha * density + offset)
         return {"densities": densities}
 
+    # functions
     def compute_energy(self, densities, energy):
         energy_densities = paddle.pow(densities, self.exponent) * energy
         return self.volume * paddle.mean(energy_densities, keepdim=True)
@@ -97,11 +99,12 @@ class Problems:
             / target_volume
         )
 
+    # loss functions
     def disp_loss_func(
         self, output_dict, label_dict=None, weight_dict={}, input_dict=None
     ):
         densities = self.density_net(input_dict)["densities"]
-        densities.detach().clone()
+        densities = densities.detach().clone()
         energy = (
             output_dict["energy_xy"] if self.dim == 2 else output_dict["energy_xyz"]
         )
@@ -124,7 +127,7 @@ class Problems:
         loss_penalty = self.compute_penalty(densities)
         # print("### loss_energy", "%.3e" % loss_energy)
         # print("### loss_penalty", "%.3e" % loss_penalty)
-        return -loss_energy + loss_penalty
+        return loss_energy + loss_penalty
 
     def density_metric_func(self, output_dict, *args):
         density = output_dict["densities"]
@@ -146,12 +149,14 @@ class Beam2D(Problems):
         self.force = -0.0025
         self.batch_size = 50 * 150
 
+    # bc
     def transform_out_disp(self, _in, _out):
         x_scaled = _in["x_scaled"]
         x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
         u, v = x * _out["u"], x * _out["v"]
         return {"u": u, "v": v}
 
+    # force
     def compute_force(self):
         input_pos = {
             "x": paddle.to_tensor([[1.5]], dtype=paddle.get_default_dtype()),
@@ -160,3 +165,202 @@ class Beam2D(Problems):
         output_pos = self.disp_net(input_pos)
         v = output_pos["v"]
         return -paddle.mean(v * self.force, keepdim=True)
+
+
+class Distributed2D(Problems):
+    def __init__(self):
+        geo_origin = (0.0, 0.0)
+        geo_dim = (1.5, 0.5)
+        super().__init__(2, geo_origin, geo_dim)
+
+        beam = ppsci.geometry.Rectangle((0.0, 0.0), (1.5, 0.5))
+        self.geom = {"geo": beam}
+        self.force = -0.0025
+        self.batch_size = 50 * 150
+
+    # bc
+    def transform_out_disp(self, _in, _out):
+        x_scaled = _in["x_scaled"]
+        x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
+        u, v = x * _out["u"], x * _out["v"]
+        return {"u": u, "v": v}
+
+    # force
+    def get_force_pos(self):
+        sample_num = 400
+        input_pos_np = self.geom["geo"].sample_boundary(
+            n=sample_num,
+            criteria=lambda x, y: y >= self.geo_dim[1] - 1e-3,
+        )
+        return {
+            "x": paddle.to_tensor(input_pos_np["x"], dtype=paddle.get_default_dtype()),
+            "y": paddle.full((sample_num, 1), 0.5, dtype=paddle.get_default_dtype()),
+        }
+
+    def compute_force(self):
+        input_pos = self.get_force_pos()
+        output_pos = self.disp_net(input_pos)
+        v = output_pos["v"]
+        return -paddle.mean(v * self.force, keepdim=True)
+
+
+class LongBeam2D(Problems):
+    def __init__(self):
+        geo_origin = (0.0, 0.0)
+        geo_dim = (1.0, 0.5)  # (2.0, 0.5)
+        super().__init__(2, geo_origin, geo_dim)
+
+        long_beam = ppsci.geometry.Rectangle(geo_origin, geo_dim)
+        self.geom = {"geo": long_beam}
+        self.force = -0.0025
+        self.batch_size = 61 * 122  # 50 * 100  # 50 * 200
+
+    # bc
+    def transform_out_disp(self, _in, _out):
+        x_scaled = _in["x_scaled"]
+        x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
+        u, v = (
+            x * (x - 1) * _out["u"],
+            x * _out["v"],
+        )  # x * (x - 1) * (x - 2) * _out["u"], x * (x - 2) * _out["v"]
+        return {"u": u, "v": v}
+
+    # force
+    def compute_force(self):
+        input_pos = {
+            "x": paddle.to_tensor([[1.0]], dtype=paddle.get_default_dtype()),
+            "y": paddle.to_tensor([[0.0]], dtype=paddle.get_default_dtype()),
+        }
+        output_pos = self.disp_net(input_pos)
+        v = output_pos["v"]
+        return -paddle.mean(v * self.force, keepdim=True)
+
+
+class Bridge2D(Problems):
+    def __init__(self):
+        geo_origin = (0.0, 0.0)
+        geo_dim = (1.0, 0.5)  # (2.0, 0.5)
+        super().__init__(2, geo_origin, geo_dim)
+
+        long_beam = ppsci.geometry.Rectangle(geo_origin, geo_dim)
+        self.geom = {"geo": long_beam}
+        self.force = -0.0025
+        self.batch_size = 61 * 122  # 50 * 100  # 50 * 200
+
+    # bc
+    def transform_out_disp(self, _in, _out):
+        x_scaled = _in["x_scaled"]
+        x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
+        u, v = x * (x - 1) * _out["u"], x * _out["v"]
+        return {"u": u, "v": v}
+
+    # force
+    def get_force_pos(self):
+        sample_num = 400
+        input_pos_np = self.geom["geo"].sample_boundary(
+            n=sample_num,
+            criteria=lambda x, y: y <= self.geo_origin[1] + 1e-3,
+        )
+        return {
+            "x": paddle.to_tensor(input_pos_np["x"], dtype=paddle.get_default_dtype()),
+            "y": paddle.full((sample_num, 1), 0.0, dtype=paddle.get_default_dtype()),
+        }
+
+    def compute_force(self):
+        input_pos = self.get_force_pos()
+        output_pos = self.disp_net(input_pos)
+        v = output_pos["v"]
+        return -paddle.mean(v * self.force, keepdim=True)
+
+
+class Triangle2D(Problems):
+    def __init__(self):
+        geo_origin = (0.0, 0.0)
+        geo_dim = (2.0, 3**0.5)
+        super().__init__(2, geo_origin, geo_dim)
+
+        triangle = ppsci.geometry.Triangle((0.0, 0.0), (2.0, 0.0), (1.0, 3**0.5))
+        self.geom = {"geo": triangle}
+        force = 0.0025
+        self.force = [
+            [-(3**0.5) * 0.5 * force, -0.5 * force],
+            [(3**0.5) * 0.5 * force, -0.5 * force],
+            [0.0, 1 * force],
+        ]
+        self.batch_size = int((3**0.5) * 10000)
+        self.volume = 3**0.5
+
+    # # bc
+    # def transform_out_disp(self, _in, _out):
+    #     x_scaled, y_scaled = _in["x_scaled"], _in["y_scaled"]
+    #     x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
+    #     y = self.geo_dim[1] / 2 * (1 + y_scaled) + self.geo_origin[1]
+    #     constraint = (x - 1) ** 2 + (y - 1 / 3**0.5) ** 2
+    #     u, v = constraint * _out["u"], constraint * _out["v"]
+    #     return {"u": u, "v": v}
+
+    # force
+    def compute_force(self):
+        input_pos = {
+            "x": paddle.to_tensor(
+                [[0.0], [2.0], [1.0]], dtype=paddle.get_default_dtype()
+            ),
+            "y": paddle.to_tensor(
+                [[0.0], [0.0], [3**0.5]], dtype=paddle.get_default_dtype()
+            ),
+        }
+        output_pos = self.disp_net(input_pos)
+        u, v = output_pos["u"], output_pos["v"]
+        force = paddle.to_tensor(self.force)
+        return -paddle.mean(
+            paddle.multiply(force[:, 0], u[:, 0])
+            + paddle.multiply(force[:, 1], v[:, 0]),
+            keepdim=True,
+        )
+
+
+class TriangleVariants2D(Problems):
+    def __init__(self):
+        geo_origin = (0.0, 0.0)
+        geo_dim = (2.0, 3**0.5)
+        super().__init__(2, geo_origin, geo_dim)
+
+        triangle = ppsci.geometry.Triangle((0.0, 0.0), (2.0, 0.0), (1.0, 3**0.5))
+        disk = ppsci.geometry.Disk((1.0, 1 / 3**0.5), 0.1)
+        self.geom = {"geo": triangle - disk}
+        force = 0.0025
+        self.force = [
+            [-(3**0.5) * 0.5 * force, -0.5 * force],
+            [(3**0.5) * 0.5 * force, -0.5 * force],
+            [0.0, 1 * force],
+        ]
+        self.batch_size = int((3**0.5) * 10000)
+        self.volume = 3**0.5 - np.pi * 0.01
+
+    # bc
+    def transform_out_disp(self, _in, _out):
+        x_scaled, y_scaled = _in["x_scaled"], _in["y_scaled"]
+        x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
+        y = self.geo_dim[1] / 2 * (1 + y_scaled) + self.geo_origin[1]
+        constraint = (x - 1) ** 2 + (y - 1 / 3**0.5) ** 2 - 0.01
+        u, v = constraint * _out["u"], constraint * _out["v"]
+        return {"u": u, "v": v}
+
+    # force
+    def compute_force(self):
+        input_pos = {
+            "x": paddle.to_tensor(
+                [[0.0], [2.0], [1.0]], dtype=paddle.get_default_dtype()
+            ),
+            "y": paddle.to_tensor(
+                [[0.0], [0.0], [3**0.5]], dtype=paddle.get_default_dtype()
+            ),
+        }
+        output_pos = self.disp_net(input_pos)
+        u, v = output_pos["u"], output_pos["v"]
+        force = paddle.to_tensor(self.force)
+        return -paddle.mean(
+            paddle.multiply(force[:, 0], u[:, 0])
+            + paddle.multiply(force[:, 1], v[:, 0]),
+            keepdim=True,
+        )

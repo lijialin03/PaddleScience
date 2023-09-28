@@ -12,7 +12,10 @@ if __name__ == "__main__":
     SEED = 2023
     ppsci.utils.misc.set_random_seed(SEED)
     OUTPUT_DIR = (
-        "./output_ntopo_all_2d_beam/" if args.output_dir is None else args.output_dir
+        # "./output_ntopo_all_2d_bridge/"
+        "./output_ntopo_all_2d_trianglevariants/"
+        if args.output_dir is None
+        else args.output_dir
     )
 
     # initialize logger
@@ -20,19 +23,20 @@ if __name__ == "__main__":
 
     # set training hyper-parameters
     # MARK
-    loss_str = "mean"
     plt_name = "vis"
     use_para = False
-    LR = 1e-4
+    LR = 3e-4
 
     EPOCHS = 100  # times for for-loop
     EPOCHS_DISP = EPOCHS_DENSITY = 1
     ITERS_PER_EPOCH = 1000
     ITERS_PER_EPOCH_DISP = 1000
     ITERS_PER_EPOCH_DENSITY = 50  # times for n_opt_batch
+    PRED_INTERVAL = 10
 
     # set problem
-    problem = problems_module.Beam2D()
+    # problem = problems_module.Bridge2D()
+    problem = problems_module.TriangleVariants2D()
 
     # set model
     input_keys = ("x_scaled", "y_scaled", "sin_x_scaled", "sin_y_scaled")
@@ -203,6 +207,7 @@ if __name__ == "__main__":
         visualizer=visualizer_density,
         eval_with_no_grad=True,
         # pretrained_model_path="./init_params/paddle_init_only_density",
+        # pretrained_model_path=f"{OUTPUT_DIR}checkpoints/latest",
     )
 
     # pre-processing
@@ -213,7 +218,7 @@ if __name__ == "__main__":
     #     if name == "linears.5.linear.bias":
     #         print(name, tensor.grad)
 
-    PRED_INTERVAL = 10
+    # PRED_INTERVAL = 1
     for i in range(1, EPOCHS + 1):
         ppsci.utils.logger.info(f"\nEpoch: {i}\n")
         solver_disp.train()
@@ -227,6 +232,6 @@ if __name__ == "__main__":
             visualizer_disp["vis"].prefix = plt_name + f"_disp_e{i}"
             solver_disp.visualize()
 
-    # plot losses
-    solver_disp.plot_losses(by_epoch=True, smooth_step=1)
-    solver_density.plot_losses(by_epoch=False, smooth_step=10)
+    # # plot losses
+    # solver_disp.plot_losses(by_epoch=True, smooth_step=1)
+    # solver_density.plot_losses(by_epoch=False, smooth_step=10)

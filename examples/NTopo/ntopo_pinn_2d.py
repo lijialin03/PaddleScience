@@ -157,11 +157,11 @@ if __name__ == "__main__":
     use_oc = False
     use_mmse = False
 
-    EPOCHS = 100  # times for for-loop
+    EPOCHS = 1000  # times for for-loop
     EPOCHS_DISP = EPOCHS_DENSITY = 1
     ITERS_PER_EPOCH = 1000
     ITERS_PER_EPOCH_DISP = 1000
-    ITERS_PER_EPOCH_DENSITY = 50  # times for n_opt_batch
+    ITERS_PER_EPOCH_DENSITY = 1  # times for n_opt_batch
     # N_OPT_BATCHES = 10
 
     # set model

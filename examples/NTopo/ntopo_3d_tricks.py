@@ -246,7 +246,10 @@ if __name__ == "__main__":
     args = config.parse_args()
     SEED = 2023
     ppsci.utils.misc.set_random_seed(SEED)
-    OUTPUT_DIR = "./output_ntopo_3d/" if args.output_dir is None else args.output_dir
+    OUTPUT_DIR = (
+        "./output_ntopo_3d_density/" if args.output_dir is None else args.output_dir
+    )
+    OUTPUT_DIR_DISP = "./output_ntopo_3d_disp/"
 
     # initialize logger
     logger.init_logger("ppsci", f"{OUTPUT_DIR}/train.log", "info")
@@ -303,7 +306,7 @@ if __name__ == "__main__":
     max_move = 0.2
     damping_parameter = 0.5  # 阻尼参数
 
-    EPOCHS = 100  # times for for-loop
+    EPOCHS = 900  # times for for-loop
     EPOCHS_DISP = EPOCHS_DENSITY = 1
     ITERS_PER_EPOCH = 1
     ITERS_PER_EPOCH_DISP = 1000
@@ -391,44 +394,44 @@ if __name__ == "__main__":
     batch_size = {"bs": 80 * 40 * 20}
 
     # debug
-    pt_sup = ppsci.constraint.SupervisedConstraint(
-        {
-            "dataset": {
-                "name": "NamedArrayDataset",
-                "input": {
-                    "x": np.array(
-                        [[0], [0.5], [1.0]], dtype=paddle.get_default_dtype()
-                    ),
-                    "y": np.array(
-                        [[0], [0.25], [0.5]], dtype=paddle.get_default_dtype()
-                    ),
-                    "z": np.array(
-                        [[0], [0.125], [0.25]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-                "label": {
-                    "u": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
-                    "v": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
-                    "w": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
-                    "energy_xyz": np.array(
-                        [[0], [0], [0]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-            },
-            "batch_size": 3,
-            "sampler": {
-                "name": "BatchSampler",
-                "drop_last": True,
-                "shuffle": False,
-            },
-            "num_workers": 1,
-        },
-        # ppsci.loss.MSELoss("mean"),
-        ppsci.loss.FunctionalLoss(disp_loss_func),
-        # ppsci.loss.FunctionalLoss(density_loss_func),
-        equation["EnergyEquation"].equations,
-        name="debug",
-    )
+    # pt_sup = ppsci.constraint.SupervisedConstraint(
+    #     {
+    #         "dataset": {
+    #             "name": "NamedArrayDataset",
+    #             "input": {
+    #                 "x": np.array(
+    #                     [[0], [0.5], [1.0]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #                 "y": np.array(
+    #                     [[0], [0.25], [0.5]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #                 "z": np.array(
+    #                     [[0], [0.125], [0.25]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #             },
+    #             "label": {
+    #                 "u": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
+    #                 "v": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
+    #                 "w": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
+    #                 "energy_xyz": np.array(
+    #                     [[0], [0], [0]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #             },
+    #         },
+    #         "batch_size": 3,
+    #         "sampler": {
+    #             "name": "BatchSampler",
+    #             "drop_last": True,
+    #             "shuffle": False,
+    #         },
+    #         "num_workers": 1,
+    #     },
+    #     # ppsci.loss.MSELoss("mean"),
+    #     ppsci.loss.FunctionalLoss(disp_loss_func),
+    #     # ppsci.loss.FunctionalLoss(density_loss_func),
+    #     equation["EnergyEquation"].equations,
+    #     name="debug",
+    # )
     # force_sup = ppsci.constraint.SupervisedConstraint(
     #     {
     #         "dataset": {
@@ -450,44 +453,44 @@ if __name__ == "__main__":
     #         },
     #         "num_workers": 1,
     #     },
-    #     ppsci.loss.FunctionalLoss(disp_force_loss_func),
+    #     ppsci.loss.FunctionalLoss(disp_loss_func),
     #     name="debug",
     # )
-    pt_sup_2 = ppsci.constraint.SupervisedConstraint(
-        {
-            "dataset": {
-                "name": "NamedArrayDataset",
-                "input": {
-                    "x": np.array(
-                        [[0], [0.5], [1.0]], dtype=paddle.get_default_dtype()
-                    ),
-                    "y": np.array(
-                        [[0], [0.25], [0.5]], dtype=paddle.get_default_dtype()
-                    ),
-                    "z": np.array(
-                        [[0], [0.125], [0.25]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-                "label": {
-                    "density": np.array(
-                        [[0], [0], [0]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-            },
-            "batch_size": 3,
-            "sampler": {
-                "name": "BatchSampler",
-                "drop_last": True,
-                "shuffle": False,
-            },
-            "num_workers": 1,
-        },
-        ppsci.loss.FunctionalLoss(density_loss_func),
-        equation["EnergyEquation"].equations,
-        name="debug",
-    )
+    # pt_sup_2 = ppsci.constraint.SupervisedConstraint(
+    #     {
+    #         "dataset": {
+    #             "name": "NamedArrayDataset",
+    #             "input": {
+    #                 "x": np.array(
+    #                     [[0], [0.5], [1.0]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #                 "y": np.array(
+    #                     [[0], [0.25], [0.5]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #                 "z": np.array(
+    #                     [[0], [0.125], [0.25]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #             },
+    #             "label": {
+    #                 "density": np.array(
+    #                     [[0], [0], [0]], dtype=paddle.get_default_dtype()
+    #                 ),
+    #             },
+    #         },
+    #         "batch_size": 3,
+    #         "sampler": {
+    #             "name": "BatchSampler",
+    #             "drop_last": True,
+    #             "shuffle": False,
+    #         },
+    #         "num_workers": 1,
+    #     },
+    #     ppsci.loss.FunctionalLoss(density_loss_func),
+    #     equation["EnergyEquation"].equations,
+    #     name="debug",
+    # )
 
-    constraint_test = {pt_sup_2.name: pt_sup_2}
+    # constraint_test = {pt_sup_2.name: pt_sup_2}
 
     # set constraint
     interior_disp = ppsci.constraint.InteriorConstraint(
@@ -589,7 +592,7 @@ if __name__ == "__main__":
     solver_disp = ppsci.solver.Solver(
         model=disp_net,
         constraint=constraint_disp,
-        output_dir=OUTPUT_DIR,
+        output_dir=OUTPUT_DIR_DISP,
         optimizer=optimizer_disp,
         epochs=EPOCHS_DISP,
         iters_per_epoch=ITERS_PER_EPOCH_DISP,
@@ -603,7 +606,8 @@ if __name__ == "__main__":
         # validator=validator,
         visualizer=visualizer_disp,
         # eval_with_no_grad=True,
-        pretrained_model_path="./init_params_3d/paddle_init_only_disp",
+        # pretrained_model_path="./init_params_3d/paddle_init_only_disp",
+        pretrained_model_path=f"{OUTPUT_DIR_DISP}checkpoints/latest",
     )
 
     solver_density = ppsci.solver.Solver(
@@ -623,25 +627,14 @@ if __name__ == "__main__":
         validator=validator_density,
         visualizer=visualizer_density,
         eval_with_no_grad=True,
-        pretrained_model_path="./init_params_3d/paddle_init_only_density",
-        # custom_gradients = density_custom_gradients,
+        # pretrained_model_path="./init_params_3d/paddle_init_only_density",
+        pretrained_model_path=f"{OUTPUT_DIR}checkpoints/latest",
     )
 
-    # for name, tensor in density_net.named_parameters():
-    #     if name == "linears.5.linear.bias":
-    #         print(name, tensor.grad)
-
     # pre-processing
-    input_pos = get_force_pos(geom["geo"])
-    solver_disp.train()
+    # input_pos = get_force_pos(geom["geo"])
+    # solver_disp.train()
     # solver_density.train()
-
-    # solver_disp.visualize()
-    # solver_density.visualize()
-
-    # for name, tensor in density_net.named_parameters():
-    #     if name == "linears.5.linear.bias":
-    #         print(name, tensor.grad)
 
     PRED_INTERVAL = 5
     for i in range(1, EPOCHS + 1):
