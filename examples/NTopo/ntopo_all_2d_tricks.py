@@ -1,7 +1,7 @@
 import model as model_module
 import numpy as np
 import paddle
-import problems_bak as problems_module
+import problems_tricks as problems_module
 
 import ppsci
 from ppsci.utils import config
@@ -9,11 +9,12 @@ from ppsci.utils import logger
 
 if __name__ == "__main__":
     args = config.parse_args()
-    SEED = 2023
+    SEED = 42
     ppsci.utils.misc.set_random_seed(SEED)
     OUTPUT_DIR = (
-        # "./output_ntopo_all_2d_bridge/"
-        "./output_ntopo_all_2d_trianglevariants/"
+        "./output_ntopo_all_2d_tricks_longbeam_1000_2/"
+        # "./output_ntopo_all_2d_tricks_tv_1000_2/"
+        # "./output_ntopo_all_2d_tricks_custom_1/"
         if args.output_dir is None
         else args.output_dir
     )
@@ -25,18 +26,19 @@ if __name__ == "__main__":
     # MARK
     plt_name = "vis"
     use_para = False
-    LR = 3e-4
+    LR_DISP = 3e-4
+    LR_DENSITY = 5e-5
 
-    EPOCHS = 100  # times for for-loop
+    EPOCHS = 200  # times for for-loop
     EPOCHS_DISP = EPOCHS_DENSITY = 1
-    ITERS_PER_EPOCH = 1000
     ITERS_PER_EPOCH_DISP = 1000
     ITERS_PER_EPOCH_DENSITY = 50  # times for n_opt_batch
     PRED_INTERVAL = 10
 
     # set problem
-    # problem = problems_module.Bridge2D()
-    problem = problems_module.TriangleVariants2D()
+    problem = problems_module.LongBeam2D()
+    # problem = problems_module.TriangleVariants2D()
+    # problem = problems_module.Custom2D_1()
 
     # set model
     input_keys = ("x_scaled", "y_scaled", "sin_x_scaled", "sin_y_scaled")
@@ -55,17 +57,17 @@ if __name__ == "__main__":
     problem.density_net.register_output_transform(problem.transform_out_density)
 
     # set optimizer
-    optimizer_disp = ppsci.optimizer.Adam(learning_rate=LR, beta2=0.99)(
+    optimizer_disp = ppsci.optimizer.Adam(learning_rate=LR_DISP, beta2=0.99)(
         (problem.disp_net,)
     )
-    optimizer_density = ppsci.optimizer.Adam(learning_rate=LR, beta1=0.8, beta2=0.9)(
-        (problem.density_net,)
-    )
+    optimizer_density = ppsci.optimizer.Adam(
+        learning_rate=LR_DENSITY, beta1=0.8, beta2=0.9
+    )((problem.density_net,))
 
     # set dataloader config
     train_dataloader_cfg = {
         "dataset": "NamedArrayDataset",
-        "iters_per_epoch": ITERS_PER_EPOCH,
+        "iters_per_epoch": ITERS_PER_EPOCH_DISP,
         "sampler": {
             "name": "BatchSampler",
             "drop_last": True,
@@ -96,7 +98,7 @@ if __name__ == "__main__":
             "batch_size": batch_size["bs"],
             "iters_per_epoch": ITERS_PER_EPOCH_DENSITY,
         },
-        ppsci.loss.FunctionalLoss(problem.density_loss_func),
+        ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
         name="INTERIOR_DENSITY",
     )
 
@@ -222,7 +224,7 @@ if __name__ == "__main__":
     for i in range(1, EPOCHS + 1):
         ppsci.utils.logger.info(f"\nEpoch: {i}\n")
         solver_disp.train()
-        solver_density.train()
+        solver_density.train_batch()
 
         # plotting during training
         if i == 1 or i % PRED_INTERVAL == 0 or i == EPOCHS:

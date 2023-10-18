@@ -196,7 +196,6 @@ class ExpressionSolver(nn.Layer):
                     output_dict[name] = expr({**output_dict, **input_dict})
                 else:
                     raise TypeError(f"expr type({type(expr)}) is invalid")
-
             # clear differentiation cache
             clear()
 

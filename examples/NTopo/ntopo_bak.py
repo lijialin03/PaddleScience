@@ -1,6 +1,3 @@
-import os
-
-import cv2
 import model as model_module
 import numpy as np
 import paddle
@@ -40,36 +37,9 @@ def comput_penalty(densities):
     )
 
 
-# def apply_flitter(loss, densities):
-#     sensitivities_i = paddle.grad(loss, densities)
-#     if filter == "sensitivity":
-#         sensitivities_i = apply_sensitivity_filter()
-
-#     old_densities.append(densities)
-#     sensitivities.append(sensitivities_i)
-
-
-def apply_oc(old_densities, sensitivities):
-    # print("####", type(old_densities), type(sensitivities))
-    # if use_oc:
-    #     target_densities = compute_oc_multi_batch()
-    # else:
-    projected_sensitivities = (
-        paddle.maximum(
-            paddle.to_tensor(0.0),
-            paddle.minimum(paddle.to_tensor(1.0), old_densities - sensitivities),
-        )
-        - old_densities
-    )
-
-    step_size = 0.05 / paddle.mean(paddle.abs(projected_sensitivities), keepdim=True)
-    return old_densities - step_size * sensitivities
-
-
 def disp_loss_func(output_dict, label_dict=None, weight_dict={}, input_dict=None):
     densities = density_net(input_dict)["densities"]
-    densities.stop_gradient = True
-    # densities = output_dict["densities"]
+    densities.detach().clone()
     energy_xy = output_dict["energy_xy"]
     loss_energy = comput_energy(densities, energy_xy)
     loss_force = comput_force()
@@ -80,23 +50,16 @@ def disp_loss_func(output_dict, label_dict=None, weight_dict={}, input_dict=None
 
 def density_loss_func(output_dict, label_dict=None, weight_dict={}, input_dict=None):
     densities = output_dict["densities"]
-    # energy_xy = output_dict["energy_xy"]
     energy_xy = equation["EnergyEquation"].equations["energy_xy"](
         {**disp_net(input_dict), **input_dict}
     )
-    energy_xy.stop_gradient = True
+    energy_xy = energy_xy.detach().clone()
 
     loss_energy = comput_energy(densities, energy_xy)
     loss_penalty = comput_penalty(densities)
     # print("### loss_energy", "%.3e" % loss_energy)
     # print("### loss_penalty", "%.3e" % loss_penalty)
-    if use_mmse:
-        losses = loss_energy if use_oc else loss_energy + loss_penalty
-        sensitivities = paddle.grad(losses, densities)[0]
-        target_densities = apply_oc(densities, sensitivities)
-        return F.mse_loss(densities, target_densities, "mean")
-    else:
-        return -loss_energy + loss_penalty
+    return -loss_energy + loss_penalty
 
 
 def density_metric_func(output_dict, *args):
@@ -106,39 +69,6 @@ def density_metric_func(output_dict, *args):
     print("min:", float(paddle.min(density)))
     metric_dict = {"densities": density.mean() - 0.5}
     return metric_dict
-
-
-def save_img(pred_input_dict, epoch_id):
-    os.makedirs(f"{OUTPUT_DIR}visual", exist_ok=True)
-
-    pred_dict = solver_density.predict(
-        pred_input_dict,
-        {"densities": lambda out: out["densities"]},
-        batch_size=BATCH_SIZE_PRED,
-        no_grad=False,
-    )
-
-    pred_img = np.ones((50, 150, 1)) * 255
-    for i in range(BATCH_SIZE_PRED):
-        idx_x, idx_y = (
-            float(pred_input_dict["x"][i]) * 150,
-            float(pred_input_dict["y"][i]) * 150,
-        )
-        idx_x, idx_y = np.clip(int(idx_x), 0, 149), np.clip(int(idx_y), 0, 49)
-        pred_img[idx_y, idx_x, 0] = (1 - float(pred_dict["densities"][i])) * 255
-
-    cv2.imwrite(
-        f"{OUTPUT_DIR}visual/density_{str(epoch_id)}.png",
-        pred_img,
-    )
-
-
-# def density_custom_gradients(loss):
-#     for name, tensor in solver.model.model_list[1].named_parameters():
-#         # print(name, tensor.grad[0][0])
-#         tensor.grad *= -1
-#         # print(name, tensor.grad[0][0])
-#         # break
 
 
 if __name__ == "__main__":
@@ -158,16 +88,7 @@ if __name__ == "__main__":
     T = -0.0025  # 牵引力大小
 
     # set equation
-    # equation = {
-    #     "LinearElasticity": ppsci.equation.LinearElasticity(
-    #         E=None, nu=None, lambda_=LAMBDA_, mu=MU, dim=3
-    #     )
-    # }
     equation = {
-        "LinearElasticity": ppsci.equation.LinearElasticity_v2(
-            param_dict={"lambda_": LAMBDA_, "mu": MU},
-            dim=2,
-        ),
         "EnergyEquation": ppsci.equation.EnergyEquation(
             param_dict={"lambda_": LAMBDA_, "mu": MU},
             dim=2,
@@ -196,23 +117,16 @@ if __name__ == "__main__":
     use_para = False
     LR = 1e-4
 
-    filter = "sensitivity"
-    use_oc = False
-    use_mmse = False
-
     EPOCHS = 100  # times for for-loop
     EPOCHS_DISP = EPOCHS_DENSITY = 1
     ITERS_PER_EPOCH = 1000
     ITERS_PER_EPOCH_DISP = 100
     ITERS_PER_EPOCH_DENSITY = 50  # times for n_opt_batch
-    # N_OPT_BATCHES = 10
 
     # set model
     input_keys = ("x_scaled", "y_scaled", "sin_x_scaled", "sin_y_scaled")
     disp_net = model_module.DenseSIRENModel(input_keys, ("u", "v"), 6, 60, 0.001)
     density_net = model_module.DenseSIRENModel(input_keys, ("density",), 6, 60, 0.001)
-    # disp_net = ppsci.arch.MLP(input_keys, ("u", "v"), 6, 60, "siren")  # sim
-    # density_net = ppsci.arch.MLP(input_keys, ("density",), 6, 60, "siren")  # topt
 
     # input transform
     def transform_in(_in):
@@ -231,7 +145,6 @@ if __name__ == "__main__":
     def transform_out_disp(_in, _out):
         x_scaled = _in["x_scaled"]
         x = BEAM_DIM[0] / 2 * (1 + x_scaled) + BEAM_ORIGIN[0]
-        # print("### bc_output[0]", x)
         u, v = x * _out["u"], x * _out["v"]
         return {"u": u, "v": v}
 
@@ -248,9 +161,6 @@ if __name__ == "__main__":
 
     density_net.register_input_transform(transform_in)
     density_net.register_output_transform(transform_out_density)
-
-    # wrap to a model_list
-    # model = ppsci.arch.ModelList((disp_net, density_net))
 
     # set optimizer
     optimizer_disp = ppsci.optimizer.Adam(learning_rate=LR, beta2=0.99)((disp_net,))
@@ -271,130 +181,12 @@ if __name__ == "__main__":
     }
     batch_size = {"bs": 50 * 150}
 
-    # debug
-    pt_sup = ppsci.constraint.SupervisedConstraint(
-        {
-            "dataset": {
-                "name": "NamedArrayDataset",
-                "input": {
-                    "x": np.array(
-                        [[0], [0.75], [1.5]], dtype=paddle.get_default_dtype()
-                    ),
-                    "y": np.array(
-                        [[0], [0.25], [0.5]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-                "label": {
-                    "u": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
-                    "v": np.array([[0], [0], [0]], dtype=paddle.get_default_dtype()),
-                    "energy_xy": np.array(
-                        [[0], [0], [0]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-            },
-            "batch_size": 3,
-            "sampler": {
-                "name": "BatchSampler",
-                "drop_last": True,
-                "shuffle": True,
-            },
-            "num_workers": 1,
-        },
-        # ppsci.loss.MSELoss("mean"),
-        # ppsci.loss.FunctionalLoss(disp_loss_func),
-        ppsci.loss.FunctionalLoss(density_loss_func),
-        equation["EnergyEquation"].equations,
-        name="debug",
-    )
-    # force_sup = ppsci.constraint.SupervisedConstraint(
-    #     {
-    #         "dataset": {
-    #             "name": "NamedArrayDataset",
-    #             "input": {
-    #                 "x": np.array([[1.5]], dtype=paddle.get_default_dtype()),
-    #                 "y": np.array([[0]], dtype=paddle.get_default_dtype()),
-    #             },
-    #             "label": {
-    #                 "u": np.array([[0]], dtype=paddle.get_default_dtype()),
-    #                 "v": np.array([[0]], dtype=paddle.get_default_dtype()),
-    #             },
-    #         },
-    #         "batch_size": 1,
-    #         "sampler": {
-    #             "name": "BatchSampler",
-    #             "drop_last": True,
-    #             "shuffle": True,
-    #         },
-    #         "num_workers": 1,
-    #     },
-    #     ppsci.loss.FunctionalLoss(disp_force_loss_func),
-    #     name="debug",
-    # )
-    pt_sup_2 = ppsci.constraint.SupervisedConstraint(
-        {
-            "dataset": {
-                "name": "NamedArrayDataset",
-                "input": {
-                    "x": np.array(
-                        [[0], [0.75], [1.5]], dtype=paddle.get_default_dtype()
-                    ),
-                    "y": np.array(
-                        [[0], [0.25], [0.5]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-                "label": {
-                    "density": np.array(
-                        [[0], [0], [0]], dtype=paddle.get_default_dtype()
-                    ),
-                },
-            },
-            "batch_size": 3,
-            "sampler": {
-                "name": "BatchSampler",
-                "drop_last": True,
-                "shuffle": True,
-            },
-            "num_workers": 1,
-        },
-        ppsci.loss.FunctionalLoss(density_loss_func),
-        equation["EnergyEquation"].equations,
-        name="debug",
-    )
-
-    constraint_test = {pt_sup_2.name: pt_sup_2}
-    # constraint_test = {force_sup.name: force_sup}
-    # constraint_test = {bc_sup.name: bc_sup, force_sup.name: force_sup}
-
     # set constraint
-    # bc_left_disp = ppsci.constraint.BoundaryConstraint(
-    #     {"u": lambda out: out["u"], "v": lambda out: out["v"]},
-    #     {"u": 0, "v": 0},
-    #     geom["geo"],
-    #     {**train_dataloader_cfg, "batch_size": batch_size["bs"]},
-    #     ppsci.loss.MSELoss(loss_str),
-    #     criteria=lambda x, y: x == BEAM_ORIGIN[0],
-    #     # weight_dict={"u": 1, "v": 1},
-    #     name="BC_LEFT_DISP",
-    # )
-    # bc_right_corner_disp = ppsci.constraint.BoundaryConstraint(
-    #     equation["EnergyEquation"].equations,
-    #     {"energy_xy": 0},
-    #     # {"traction_x": 0, "traction_y": T},
-    #     geom["geo"],
-    #     {**train_dataloader_cfg, "batch_size": batch_size["bs"]},
-    #     # ppsci.loss.MSELoss(loss_str),
-    #     ppsci.loss.FunctionalLoss(disp_force_loss_func),
-    #     criteria=lambda x, y: np.logical_and(
-    #         x == BEAM_ORIGIN[1], y > BEAM_ORIGIN[0], y < BEAM_ORIGIN[0] + 1e-3
-    #     ),
-    #     name="BC_RIGHT_CORNER_DISP",
-    # )
     interior_disp = ppsci.constraint.InteriorConstraint(
         equation["EnergyEquation"].equations,
         {"energy_xy": 0},
         geom["geo"],
         {**train_dataloader_cfg, "batch_size": batch_size["bs"]},
-        # ppsci.loss.MSELoss(loss_str),
         ppsci.loss.FunctionalLoss(disp_loss_func),
         name="INTERIOR_DISP",
     )
@@ -410,15 +202,14 @@ if __name__ == "__main__":
             "batch_size": batch_size["bs"],
             "iters_per_epoch": ITERS_PER_EPOCH_DENSITY,
         },
-        # ppsci.loss.MSELoss(loss_str),
         ppsci.loss.FunctionalLoss(density_loss_func),
         name="INTERIOR_DENSITY",
     )
 
     # re-assign to ITERS_PER_EPOCH
     # if use_para:
-    #     ITERS_PER_EPOCH_DISP = len(bc_left_disp.data_loader)
-    #     ITERS_PER_EPOCH_DENSITY = len(interior_density.data_loader)
+    # ITERS_PER_EPOCH_DISP = len(bc_left_disp.data_loader)
+    # ITERS_PER_EPOCH_DENSITY = len(interior_density.data_loader)
 
     # wrap constraints together
     constraint_disp = {
@@ -501,7 +292,7 @@ if __name__ == "__main__":
         # validator=validator,
         visualizer=visualizer_disp,
         # eval_with_no_grad=True,
-        pretrained_model_path="./init_params/paddle_init_only_disp",
+        # pretrained_model_path="./init_params/paddle_init_only_disp",
     )
 
     solver_density = ppsci.solver.Solver(
@@ -521,20 +312,12 @@ if __name__ == "__main__":
         validator=validator_density,
         visualizer=visualizer_density,
         eval_with_no_grad=True,
-        pretrained_model_path="./init_params/paddle_init_only_density",
-        # custom_gradients = density_custom_gradients,
+        # pretrained_model_path="./init_params/paddle_init_only_density",
     )
 
-    # for name, tensor in density_net.named_parameters():
-    #     if name == "linears.5.linear.bias":
-    #         print(name, tensor.grad)
-
     # pre-processing
-    # solver_disp.train()
-    # solver_density.train()
-
+    solver_disp.train()
     # solver_disp.visualize()
-    # solver_density.visualize()
 
     # for name, tensor in density_net.named_parameters():
     #     if name == "linears.5.linear.bias":
@@ -543,22 +326,17 @@ if __name__ == "__main__":
     PRED_INTERVAL = 10
     for i in range(1, EPOCHS + 1):
         ppsci.utils.logger.info(f"\nEpoch: {i}\n")
+        solver_disp.train()
+        solver_density.train()
+
         # plotting during training
         if i == 1 or i % PRED_INTERVAL == 0 or i == EPOCHS:
-            # solver_density.eval()
-            # # save_img(pred_input_dict, i)
-
-            # visualizer_density["vis"].prefix = plt_name + f"_density_e{i}"
-            # solver_density.visualize()
-
+            solver_density.eval()
+            visualizer_density["vis"].prefix = plt_name + f"_density_e{i}"
+            solver_density.visualize()
             visualizer_disp["vis"].prefix = plt_name + f"_disp_e{i}"
             solver_disp.visualize()
 
-        solver_disp.train()
-        # solver_density.train()
-        # for j in range(1, N_OPT_BATCHES + 1):
-        #     solver_density.train()
-
-    # # plot losses
-    # solver_disp.plot_losses(by_epoch=True, smooth_step=1)
-    # solver_density.plot_losses(by_epoch=False, smooth_step=10)
+    # plot losses
+    solver_disp.plot_losses(by_epoch=True, smooth_step=1)
+    solver_density.plot_losses(by_epoch=False, smooth_step=10)

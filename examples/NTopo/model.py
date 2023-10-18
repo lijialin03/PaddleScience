@@ -21,6 +21,7 @@ import paddle.nn as nn
 from ppsci.arch import activation as act_mod
 from ppsci.arch import base
 from ppsci.utils import initializer
+from ppsci.utils import logger
 
 
 class DenseBlock(nn.Layer):
@@ -28,19 +29,20 @@ class DenseBlock(nn.Layer):
         self,
         in_features: int,
         out_features: int,
-        w0: float = 60.0,
+        w0: float = 1.0,
         coef1: float = 6.0,
         coef2: float = 1.0,
         weight_init=True,
         bias_init=True,
         use_act=False,
+        use_sqrt=False,
     ) -> None:
         super().__init__()
         self.linear = nn.Linear(in_features, out_features)  # , bias_attr=False)
         self.act = act_mod.Siren(w0) if use_act else None
 
         if weight_init:
-            self.init_param(self.linear.weight, coef1, coef2)
+            self.init_param(self.linear.weight, coef1, coef2, use_sqrt)
         else:
             self.init_zeros(self.linear.weight)
         if bias_init:
@@ -48,13 +50,17 @@ class DenseBlock(nn.Layer):
         else:
             self.init_zeros(self.linear.bias)
 
-    def init_param(self, param, coef1: float = 6.0, coef2: float = 1.0):
+    def init_param(self, param, coef1: float = 6.0, coef2: float = 1.0, use_sqrt=True):
         in_features = param.shape[0]
         with paddle.no_grad():
             initializer.uniform_(
                 param,
                 -np.sqrt(coef1 / in_features) * coef2,
                 np.sqrt(coef1 / in_features) * coef2,
+            ) if use_sqrt else initializer.uniform_(
+                param,
+                -coef1 / in_features * coef2,
+                coef1 / in_features * coef2,
             )
 
     def init_zeros(self, param):
@@ -63,9 +69,21 @@ class DenseBlock(nn.Layer):
     def forward(self, x):
         y = x
         # print("### ", y)
+        if float(paddle.min(y)) > 1e9:
+            logger.info(
+                f"### before linear, y: {float(paddle.min(y))},{float(paddle.max(y))}"
+            )
         y = self.linear(y)
+        if float(paddle.min(y)) > 1e9:
+            logger.info(
+                f"### before act, y: {float(paddle.min(y))},{float(paddle.max(y))}"
+            )
         if self.act:
             y = self.act(y)
+        # if float(paddle.min(y)) > 1e9:
+        #     logger.info(
+        #         f"### after act, y: {float(paddle.min(y))},{float(paddle.max(y))}"
+        #     )
         # print("### ", y)
         # exit()
         return y
@@ -109,6 +127,7 @@ class DenseSIRENModel(base.Arch):
         weight_init = (True, True, True, True, True, True)
         bias_init = (True, True, True, True, True, False)
         use_act = (True, True, True, True, True, False)
+        use_sqrt = (False, True, True, True, True, True)
 
         # initialize layers
         for i in range(num_layers):
@@ -122,6 +141,7 @@ class DenseSIRENModel(base.Arch):
                     weight_init[i],
                     bias_init[i],
                     use_act[i],
+                    use_sqrt[i],
                 )
             )
         self.linears = nn.LayerList(self.linears)
@@ -133,6 +153,7 @@ class DenseSIRENModel(base.Arch):
             y = layer(y)
             # exit()
             # print(i, y)
+            # logger.info(f"i: {i},y: {float(paddle.min(y))},{float(paddle.max(y))}")
             if self.skip[i]:
                 y = paddle.concat([short, y], axis=-1)
                 short = y
@@ -145,8 +166,12 @@ class DenseSIRENModel(base.Arch):
             x = self._input_transform(x)
 
         y = self.concat_to_tensor(x, self.input_keys, axis=-1)
+        if float(paddle.min(y)) > 1e9:
+            logger.info(f"in: {float(paddle.min(y))},{float(paddle.max(y))}")
         # print(y.numpy())
         y = self.forward_tensor(y)
+        if float(paddle.min(y)) > 1e9:
+            logger.info(f"out: {float(paddle.min(y))},{float(paddle.max(y))}")
         # print(y.numpy())
         y = self.split_to_dict(y, self.output_keys, axis=-1)
 
