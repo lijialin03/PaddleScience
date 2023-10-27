@@ -383,6 +383,8 @@ class Solver:
                     )
                 logger.info(
                     f"[Eval][Epoch {epoch_id}]"
+                    f"[metric: {cur_metric}]"
+                    f"[best epoch: {self.best_metric['epoch']}]"
                     f"[best metric: {self.best_metric['metric']}]"
                 )
                 for metric_dict in metric_dict_group.values():
