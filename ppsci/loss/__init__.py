@@ -16,6 +16,7 @@ import copy
 
 from ppsci.loss.base import Loss
 from ppsci.loss.func import FunctionalLoss
+from ppsci.loss.func import FunctionalLossBatch
 from ppsci.loss.integral import IntegralLoss
 from ppsci.loss.l1 import L1Loss
 from ppsci.loss.l1 import PeriodicL1Loss
@@ -30,6 +31,7 @@ from ppsci.loss.mse import PeriodicMSELoss
 __all__ = [
     "Loss",
     "FunctionalLoss",
+    "FunctionalLossBatch",
     "IntegralLoss",
     "L1Loss",
     "PeriodicL1Loss",
