@@ -42,7 +42,7 @@ class Problems:
         self.max_move = cfg.MAX_MOVE
         self.damping_parameter = cfg.DAMPING
         self.filter = cfg.FILTER
-        self.filter_radius = cfg.FILTER_RADIUS
+        self.sigma = cfg.FILTER_SIGMA
 
     def comput_volume(self):
         return np.prod(self.geo_dim)
@@ -218,11 +218,10 @@ class Problems:
 
     # filter
     def gaussian_filter(self, sensitivities):
-        # density = paddle.reshape(density, self.batch_size)
-        # density_blur = gaussian(density.numpy(), 3).reshape([-1, 1])
         sensitivities = paddle.reshape(sensitivities, self.batch_size)
-        sensitivities_blur = gaussian(sensitivities.numpy(), 3).reshape([-1, 1])
-
+        sensitivities_blur = gaussian(sensitivities.numpy(), self.sigma).reshape(
+            [-1, 1]
+        )
         return paddle.to_tensor(sensitivities_blur, dtype=paddle.get_default_dtype())
 
     # loss functions
@@ -246,13 +245,12 @@ class Problems:
             ppsci.autodiff.clear()
         return ppsci.equation.EnergyEquation(param_dict, self.dim)
 
-    def disp_loss_func(
-        self, output_dict, label_dict=None, weight_dict={}, input_dict=None
-    ):
+    def disp_loss_func(self, output_dict, label_dict=None, weight_dict={}):
+        input_dict = {"x": output_dict["x"], "y": output_dict["y"]}
+        if self.dim == 3:
+            input_dict["z"] = output_dict["z"]
         densities = self.density_net(input_dict)["densities"].detach().clone()
-        energy = (
-            output_dict["energy_xy"] if self.dim == 2 else output_dict["energy_xyz"]
-        )
+        energy = output_dict["energy"]
         loss_energy = self.compute_energy(densities, energy)
         loss_force = self.compute_force()
         return loss_energy + loss_force
@@ -262,21 +260,24 @@ class Problems:
         output_dicts_list,
         label_dicts_list=None,
         weight_dicts_list=None,
-        input_dicts_list=None,
     ):
         loss_list = []
         densities_list = []
         sensitivities_list = []
-        for i, output_dict in enumerate(output_dicts_list):
+        input_dicts_list = []
+        for output_dict in output_dicts_list:
+            input_dict = {"x": output_dict[0]["x"], "y": output_dict[0]["y"]}
+            if self.dim == 3:
+                input_dict["z"] = output_dict[0]["z"]
+            input_dicts_list.append(input_dict)
             densities = output_dict[0]["densities"]
-            output_dict_disp = self.disp_net(input_dicts_list[i][0])
+            output_dict_disp = self.disp_net(input_dict)
             energy_no_backward = self.gen_energy_equation_param(
-                output_dict_disp, input_dicts_list[i][0]
+                output_dict_disp, input_dict
             )
-            key_energy = "energy_xy" if self.dim == 2 else "energy_xyz"
-            energy = energy_no_backward.equations[key_energy]({})
-            # energy = self.equation["EnergyEquation"].equations["energy_xy"](
-            #     {**self.disp_net(input_dicts_list[i][0]), **input_dicts_list[i][0]}
+            energy = energy_no_backward.equations["energy"]({})
+            # energy = self.equation["EnergyEquation"].equations["energy"](
+            #     {**self.disp_net(input_dict), **input_dict}
             # )  # TODO: OOM
             ppsci.autodiff.clear()
 
@@ -309,7 +310,7 @@ class Problems:
             )
 
             def oc_loss_func(model, i):
-                densities_i = model(input_dicts_list[i][0])["densities"]
+                densities_i = model(input_dicts_list[i])["densities"]
                 loss = F.mse_loss(densities_i, target_densities_list[i], "mean")
                 return loss
 
@@ -365,7 +366,7 @@ class Distributed2D(Problems):
         self.geom = {"geo": beam}
         self.force = -0.0025
         self.mirror = None
-        self.batch_size = 50 * 150
+        self.batch_size = (150, 50)
 
     # bc
     def transform_out_disp(self, _in, _out):
@@ -403,7 +404,7 @@ class LongBeam2D(Problems):
         self.geom = {"geo": long_beam}
         self.force = -0.0025
         self.mirror = [True, False]
-        self.batch_size = 61 * 122  # 50 * 100  # 50 * 200
+        self.batch_size = (122, 61)  # 50 * 100  # 50 * 200
 
     # bc
     def transform_out_disp(self, _in, _out):
@@ -436,7 +437,7 @@ class Bridge2D(Problems):
         self.geom = {"geo": long_beam}
         self.force = -0.0025
         self.mirror = [True, False]
-        self.batch_size = 61 * 122  # 50 * 100  # 50 * 200
+        self.batch_size = (122, 61)  # 50 * 100  # 50 * 200
 
     # bc
     def transform_out_disp(self, _in, _out):

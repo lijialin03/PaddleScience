@@ -30,7 +30,7 @@ output_dir_disp: ${hydra:run.dir}/disp
 output_dir_density: ${hydra:run.dir}/density
 
 # set problem parameters
-PROBLEM: "Beam3D"
+PROBLEM: "Beam2D"
 
 # set working condition
 NU: 0.3
@@ -45,7 +45,7 @@ DAMPING: 0.5  # 阻尼参数
 USE_MMSE: true
 USE_OC: true
 FILTER: "Gaussian"  # "sensitivity"
-FILTER_RADIUS: 2.0
+FILTER_SIGMA: 1.0
 
 input_keys_2d: ["x_scaled", "y_scaled",  "sin_x_scaled", "sin_y_scaled"]
 input_keys_3d: ["x_scaled", "y_scaled", "z_scaled", "sin_x_scaled", "sin_y_scaled", "sin_z_scaled"]
@@ -54,13 +54,13 @@ output_keys_3d: ["u", "v", "w"]
 # model settings
 MODEL:
   disp_net:
-    input_keys: ${input_keys_3d}
-    output_keys: ${output_keys_3d}
+    input_keys: ${input_keys_2d}
+    output_keys: ${output_keys_2d}
     num_layers: 6
     hidden_size: 180
     last_layer_init_scale: 1.0e-3
   density_net:
-    input_keys: ${input_keys_3d}
+    input_keys: ${input_keys_2d}
     output_keys: ["density",]
     num_layers: 6
     hidden_size: 180
@@ -68,7 +68,7 @@ MODEL:
 
 # training settings
 TRAIN:
-  epochs: 1000  # times for for-loop
+  epochs: 100  # times for for-loop
   disp_net:
     epochs: 1
     iters_per_epoch: 1000
@@ -84,9 +84,6 @@ TRAIN:
       beta1: 0.8
       beta2: 0.9
       epsilon: 1e-7
-  batch_size:
-    constraint: 7500
-    visualizer: 7500
   save_freq: 10
   eval_during_train: false
   eval_freq: 100

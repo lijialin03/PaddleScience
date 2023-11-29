@@ -59,8 +59,8 @@ class FunctionalLoss(base.Loss):
         super().__init__(reduction, weight)
         self.loss_expr = loss_expr
 
-    def forward(self, output_dict, label_dict=None, weight_dict=None, input_dict=None):
-        return self.loss_expr(output_dict, label_dict, weight_dict, input_dict)
+    def forward(self, output_dict, label_dict=None, weight_dict=None):
+        return self.loss_expr(output_dict, label_dict, weight_dict)
 
 
 class FunctionalLossBatch(base.Loss):
@@ -84,6 +84,4 @@ class FunctionalLossBatch(base.Loss):
         weight_dicts_list=None,
         input_dicts_list=None,
     ):
-        return self.loss_expr(
-            output_dicts_list, label_dicts_list, weight_dicts_list, input_dicts_list
-        )
+        return self.loss_expr(output_dicts_list, label_dicts_list, weight_dicts_list)

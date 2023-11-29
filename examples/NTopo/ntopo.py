@@ -53,6 +53,18 @@ def train(cfg: DictConfig):
     if problem.dim == 3:
         bounds += ((problem.geo_origin[2], problem.geo_dim[2]),)
     sampler = func_module.Sampler(problem.geom["geo"], bounds=bounds)
+    batch_size = int(np.prod(problem.batch_size))
+
+    # set keys
+    pred_input_keys = ("x", "y")
+    if problem.dim == 3:
+        pred_input_keys += ("z",)
+    output_expr = {
+        "x": lambda out: out["x"],
+        "y": lambda out: out["y"],
+    }
+    if problem.dim == 3:
+        output_expr["z"] = lambda out: out["z"]
 
     # set dataloader config
     train_dataloader_cfg = {
@@ -69,12 +81,15 @@ def train(cfg: DictConfig):
 
     # set constraint
     interior_disp = ppsci.constraint.InteriorConstraint(
-        problem.equation["EnergyEquation"].equations,
-        {"energy_xyz": 0} if problem.dim == 3 else {"energy_xy": 0},
+        {**problem.equation["EnergyEquation"].equations, **output_expr},
+        {
+            "energy": 0,
+            **{key: 0 for key in pred_input_keys},
+        },
         problem.geom["geo"],
         {
             **train_dataloader_cfg,
-            "batch_size": cfg.TRAIN.batch_size.constraint,
+            "batch_size": batch_size,
             "iters_per_epoch": cfg.TRAIN.disp_net.iters_per_epoch,
         },
         # ppsci.loss.MSELoss(loss_str),
@@ -102,11 +117,12 @@ def train(cfg: DictConfig):
                 "shuffle": False,
             },
             "num_workers": 1,
-            "batch_size": int(np.prod(problem.batch_size)),
+            "batch_size": batch_size,
         },
         ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
         {
             "densities": lambda out: out["densities"],
+            **output_expr,
         },
         name="INTERIOR_DENSITY",
     )
@@ -119,26 +135,26 @@ def train(cfg: DictConfig):
     #     problem.geom["geo"],
     #     {
     #         **train_dataloader_cfg,
-    #         "batch_size": cfg.TRAIN.batch_size.constraint,
+    #         "batch_size": batch_size,
     #         "iters_per_epoch": cfg.TRAIN.density_net.iters_per_epoch,
     #     },
     #     # ppsci.loss.MSELoss(loss_str),
     #     ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
+    #     {
+    #         "densities": lambda out: out["densities"],
+    #         **output_expr,
+    #     },
     #     name="INTERIOR_DENSITY",
     # )
 
     constraint_density = {interior_density.name: interior_density}
 
     # set visualizer(optional)
-    pred_input_keys = ("x", "y")
-    if problem.dim == 3:
-        pred_input_keys += ("z",)
-
     # add inferencer data
-    samplers = problem.geom["geo"].sample_interior(cfg.TRAIN.batch_size.visualizer)
+    samples = problem.geom["geo"].sample_interior(batch_size)
     pred_input_dict = {}
     for key in pred_input_keys:
-        pred_input_dict.update({key: samplers[key]})
+        pred_input_dict.update({key: samples[key]})
 
     visualizer_disp = {
         "vis_disp": ppsci.visualize.VisualizerVtu(
@@ -153,7 +169,7 @@ def train(cfg: DictConfig):
             {
                 "density": lambda out: out["densities"],
             },
-            batch_size=cfg.TRAIN.batch_size.visualizer,
+            batch_size=batch_size,
             prefix="vtu_density",
         ),
     }
@@ -220,11 +236,12 @@ def train(cfg: DictConfig):
                     "shuffle": False,
                 },
                 "num_workers": 1,
-                "batch_size": int(np.prod(problem.batch_size)),
+                "batch_size": batch_size,
             },
             ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
             {
                 "densities": lambda out: out["densities"],
+                **output_expr,
             },
             name="INTERIOR_DENSITY",
         )
@@ -273,22 +290,22 @@ def evaluate(cfg: DictConfig):
 
     if problem.dim == 2:
         # add inferencer data
-        samplers = problem.geom["geo"].sample_interior(cfg.EVAL.num_sample)
+        samples = problem.geom["geo"].sample_interior(cfg.EVAL.num_sample)
         pred_input_dict = {}
         if problem.mirror:
             if problem.mirror[0]:
                 pred_input_dict["x"] = np.concatenate(
-                    [samplers["x"], 2 * problem.geo_dim[0] - samplers["x"]]
+                    [samples["x"], 2 * problem.geo_dim[0] - samples["x"]]
                 )
-                pred_input_dict["y"] = np.concatenate([samplers["y"], samplers["y"]])
+                pred_input_dict["y"] = np.concatenate([samples["y"], samples["y"]])
             if problem.mirror[1]:
-                pred_input_dict["x"] = np.concatenate([samplers["x"], samplers["x"]])
+                pred_input_dict["x"] = np.concatenate([samples["x"], samples["x"]])
                 pred_input_dict["y"] = np.concatenate(
-                    [samplers["y"], 2 * problem.geo_dim[1] - samplers["y"]]
+                    [samples["y"], 2 * problem.geo_dim[1] - samples["y"]]
                 )
         else:
-            pred_input_dict["x"] = samplers["x"]
-            pred_input_dict["y"] = samplers["y"]
+            pred_input_dict["x"] = samples["x"]
+            pred_input_dict["y"] = samples["y"]
 
         def compute_mirror_density(problem, out):
             densities = out["densities"][: cfg.EVAL.num_sample]
