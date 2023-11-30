@@ -581,9 +581,9 @@ def lambdify(
     # remove duplicates with topological order kept
     sympy_nodes = list(dict.fromkeys(sympy_nodes))
 
-    if isinstance(models, arch.ModelList):
+    if models is not None and isinstance(models, arch.ModelList):
         models = tuple(models.model_list[i] for i in range(len(models.model_list)))
-    if not isinstance(models, (tuple, list)):
+    if models is not None and not isinstance(models, (tuple, list)):
         models = (models,)
 
     # convert sympy node to callable node

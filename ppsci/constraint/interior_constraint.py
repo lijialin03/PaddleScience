@@ -109,8 +109,6 @@ class InteriorConstraint(base.Constraint):
             evenly,
             compute_sdf_derivatives,
         )
-        if "area" in input:
-            input["area"] *= dataloader_cfg["iters_per_epoch"]
 
         # prepare label
         label = {}

@@ -1,13 +1,12 @@
+from typing import Dict
+
 import numpy as np
 import paddle
 import paddle.nn.functional as F
 from skimage.filters import gaussian
 
 import ppsci
-from ppsci.autodiff import jacobian
 from ppsci.utils import logger
-
-# from matplotlib import imgaussfilt3
 
 
 class Problems:
@@ -26,7 +25,7 @@ class Problems:
         self.mu = cfg.E / (1 + cfg.NU) if self.dim == 2 else cfg.E / (2 * (1 + cfg.NU))
         self.equation = {
             "EnergyEquation": ppsci.equation.EnergyEquation(
-                param_dict={"lambda_": self.lambda_, "mu": self.mu}, dim=self.dim
+                lambda_=self.lambda_, mu=self.mu, dim=self.dim
             ),
         }
 
@@ -56,7 +55,6 @@ class Problems:
         y_scaled = 2.0 / self.geo_dim[1] * y + (
             -1.0 - 2.0 * self.geo_origin[1] / self.geo_dim[1]
         )
-
         sin_x_scaled, sin_y_scaled = paddle.sin(x_scaled), paddle.sin(y_scaled)
 
         in_trans = {
@@ -77,15 +75,29 @@ class Problems:
 
         return in_trans
 
+    def transform_in_density(self, _in):
+        # shape = (
+        #     [1, self.batch_size[0], self.batch_size[1], 1]
+        #     if self.dim == 2
+        #     else [1, self.batch_size[0], self.batch_size[1], self.batch_size[2], 1]
+        # )
+        shape = [-1, 1, 1, 1] if self.dim == 2 else [-1, 1, 1, 1, 1]
+        # in_trans = self.transform_in(_in)
+        in_trans = self.disp_net(_in)
+        for key in in_trans:
+            in_trans[key] = in_trans[key].reshape(shape)
+        return in_trans
+
     def transform_out_disp(self, _in, _out):
         "Different for each problems because of different boundary constraints."
         logger.info("In default out transform of disp net")
         return _out
 
     def transform_out_density(self, _in, _out):
-        density = _out["density"]
+        density = _out["density"].reshape([-1, 1])
         offset = np.log(self.volume_ratio / (1.0 - self.volume_ratio))
         densities = F.sigmoid(self.alpha * density + offset)
+        # print(densities)
         return {"densities": densities}
 
     # functions
@@ -225,34 +237,13 @@ class Problems:
         return paddle.to_tensor(sensitivities_blur, dtype=paddle.get_default_dtype())
 
     # loss functions
-    def gen_energy_equation_param(self, out_, in_):
-        param_dict = {"lambda_": self.lambda_, "mu": self.mu}
-        x, y = in_["x"], in_["y"]
-        u, v = out_["u"], out_["v"]
-        param_dict["u__x"] = jacobian(u, x).detach().clone()
-        param_dict["u__y"] = jacobian(u, y).detach().clone()
-        param_dict["v__x"] = jacobian(v, x).detach().clone()
-        param_dict["v__y"] = jacobian(v, y).detach().clone()
-        ppsci.autodiff.clear()
-        if self.dim == 3:
-            z = in_["z"]
-            w = out_["w"]
-            param_dict["u__z"] = jacobian(u, z).detach().clone()
-            param_dict["v__z"] = jacobian(v, z).detach().clone()
-            param_dict["w__x"] = jacobian(w, x).detach().clone()
-            param_dict["w__y"] = jacobian(w, y).detach().clone()
-            param_dict["w__z"] = jacobian(w, z).detach().clone()
-            ppsci.autodiff.clear()
-        return ppsci.equation.EnergyEquation(param_dict, self.dim)
-
     def disp_loss_func(self, output_dict, label_dict=None, weight_dict={}):
-        input_dict = {"x": output_dict["x"], "y": output_dict["y"]}
-        if self.dim == 3:
-            input_dict["z"] = output_dict["z"]
-        densities = self.density_net(input_dict)["densities"].detach().clone()
+        densities = output_dict["densities"].detach().clone()
         energy = output_dict["energy"]
         loss_energy = self.compute_energy(densities, energy)
         loss_force = self.compute_force()
+        # print("loss_energy:", loss_energy)
+        # print("loss_force:", loss_force)
         return loss_energy + loss_force
 
     def density_loss_func(
@@ -265,20 +256,11 @@ class Problems:
         densities_list = []
         sensitivities_list = []
         input_dicts_list = []
+        if isinstance(output_dicts_list, Dict):
+            output_dicts_list = [[output_dicts_list]]
         for output_dict in output_dicts_list:
-            input_dict = {"x": output_dict[0]["x"], "y": output_dict[0]["y"]}
-            if self.dim == 3:
-                input_dict["z"] = output_dict[0]["z"]
-            input_dicts_list.append(input_dict)
             densities = output_dict[0]["densities"]
-            output_dict_disp = self.disp_net(input_dict)
-            energy_no_backward = self.gen_energy_equation_param(
-                output_dict_disp, input_dict
-            )
-            energy = energy_no_backward.equations["energy"]({})
-            # energy = self.equation["EnergyEquation"].equations["energy"](
-            #     {**self.disp_net(input_dict), **input_dict}
-            # )  # TODO: OOM
+            energy = output_dict[0]["energy"]
             ppsci.autodiff.clear()
 
             loss_energy = self.compute_energy(densities, energy)
@@ -299,8 +281,14 @@ class Problems:
             sensitivities_list.append(sensitivities)
             ppsci.autodiff.clear()
 
+            if self.use_mmse:
+                input_dict = {"x": output_dict[0]["x"], "y": output_dict[0]["y"]}
+                if self.dim == 3:
+                    input_dict["z"] = output_dict[0]["z"]
+                input_dicts_list.append(input_dict)
+
         if not self.use_mmse:
-            return loss_list
+            return loss_list[0]
         else:
             target_densities_list = self.compute_target_densities(
                 densities_list, sensitivities_list
@@ -340,18 +328,29 @@ class Beam2D(Problems):
 
     # bc
     def transform_out_disp(self, _in, _out):
-        x_scaled = _in["x_scaled"]
+        x_scaled = _in["x_scaled"]  # .reshape([-1, 1])
         x = self.geo_dim[0] / 2 * (1 + x_scaled) + self.geo_origin[0]
+        # u, v = x * _out["u"].reshape([-1, 1]), x * _out["v"].reshape([-1, 1])
         u, v = x * _out["u"], x * _out["v"]
         return {"u": u, "v": v}
 
     # force
     def compute_force(self):
+        # input_arr = np.zeros([1, self.batch_size[0], self.batch_size[1], 2])
+        # input_arr[:, self.batch_size[0] - 1, 0, :] = [1.5, 0.0]
+        # input_arr = input_arr.reshape([-1, 2])
+        # input_pos = {
+        #     "x": paddle.to_tensor(input_arr[:, 0], dtype=paddle.get_default_dtype()),
+        #     "y": paddle.to_tensor(input_arr[:, 1], dtype=paddle.get_default_dtype()),
+        # }
         input_pos = {
             "x": paddle.to_tensor([[1.5]], dtype=paddle.get_default_dtype()),
             "y": paddle.to_tensor([[0.0]], dtype=paddle.get_default_dtype()),
         }
         output_force = self.disp_net(input_pos)
+        # v = output_force["v"].reshape([1, self.batch_size[0], self.batch_size[1], 1])[
+        #     0, self.batch_size[0] - 1, 0, 0
+        # ]
         v = output_force["v"]
         return -paddle.mean(v * self.force, keepdim=True)
 

@@ -1,7 +1,7 @@
 hydra:
   run:
     # dynamic output directory according to running time and override name
-    dir: outputs_ntopo/${now:%Y-%m-%d}/${now:%H-%M-%S}/${hydra.job.override_dirname}
+    dir: outputs_ntopo_conv/${now:%Y-%m-%d}/${now:%H-%M-%S}/${hydra.job.override_dirname}
   job:
     name: ${mode} # name of logfile
     chdir: false # keep current working direcotry unchaned
@@ -44,7 +44,7 @@ DAMPING: 0.5  # 阻尼参数
 
 USE_MMSE: true
 USE_OC: true
-FILTER: "Gaussian"  # "sensitivity"
+FILTER: "none"  # "Gaussian"  # "sensitivity"
 FILTER_SIGMA: 1.0
 
 input_keys_2d: ["x_scaled", "y_scaled",  "sin_x_scaled", "sin_y_scaled"]
@@ -60,11 +60,20 @@ MODEL:
     hidden_size: 180
     last_layer_init_scale: 1.0e-3
   density_net:
-    input_keys: ${input_keys_2d}
+    # input_keys: ${input_keys_2d}
+    input_keys: ["u","v"]
     output_keys: ["density",]
     num_layers: 6
     hidden_size: 180
     last_layer_init_scale: 1.0e-3
+  density_net_mlp:
+    input_keys: ${input_keys_2d}
+    output_keys: ["density",]
+    num_layers: 6
+    hidden_size: 180
+    activation: "silu"
+    skip_connection: true
+    weight_norm: true
 
 # training settings
 TRAIN:
@@ -78,7 +87,7 @@ TRAIN:
       epsilon: 1e-7
   density_net:
     epochs: 1
-    iters_per_epoch: 50
+    iters_per_epoch: 10
     optimizer:
       learning_rate: 3.0e-4
       beta1: 0.8
@@ -93,6 +102,5 @@ TRAIN:
 
 # evaluation settings
 EVAL:
-  num_sample: 10000
   pretrained_model_path: null
   n_cells: [100, 50, 25]
