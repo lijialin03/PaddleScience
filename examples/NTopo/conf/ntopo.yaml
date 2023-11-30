@@ -30,7 +30,7 @@ output_dir_disp: ${hydra:run.dir}/disp
 output_dir_density: ${hydra:run.dir}/density
 
 # set problem parameters
-PROBLEM: "Beam2D"
+PROBLEM: "Beam3D"
 
 # set working condition
 NU: 0.3
@@ -54,13 +54,13 @@ output_keys_3d: ["u", "v", "w"]
 # model settings
 MODEL:
   disp_net:
-    input_keys: ${input_keys_2d}
-    output_keys: ${output_keys_2d}
+    input_keys: ${input_keys_3d}
+    output_keys: ${output_keys_3d}
     num_layers: 6
     hidden_size: 180
     last_layer_init_scale: 1.0e-3
   density_net:
-    input_keys: ${input_keys_2d}
+    input_keys: ${input_keys_3d}
     output_keys: ["density",]
     num_layers: 6
     hidden_size: 180
@@ -68,7 +68,7 @@ MODEL:
 
 # training settings
 TRAIN:
-  epochs: 100  # times for for-loop
+  epochs: 1000  # times for for-loop
   disp_net:
     epochs: 1
     iters_per_epoch: 1000

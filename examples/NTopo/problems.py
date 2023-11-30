@@ -1,13 +1,12 @@
+from typing import Dict
+
 import numpy as np
 import paddle
 import paddle.nn.functional as F
 from skimage.filters import gaussian
 
 import ppsci
-from ppsci.autodiff import jacobian
 from ppsci.utils import logger
-
-# from matplotlib import imgaussfilt3
 
 
 class Problems:
@@ -26,7 +25,7 @@ class Problems:
         self.mu = cfg.E / (1 + cfg.NU) if self.dim == 2 else cfg.E / (2 * (1 + cfg.NU))
         self.equation = {
             "EnergyEquation": ppsci.equation.EnergyEquation(
-                param_dict={"lambda_": self.lambda_, "mu": self.mu}, dim=self.dim
+                lambda_=self.lambda_, mu=self.mu, dim=self.dim
             ),
         }
 
@@ -225,26 +224,6 @@ class Problems:
         return paddle.to_tensor(sensitivities_blur, dtype=paddle.get_default_dtype())
 
     # loss functions
-    def gen_energy_equation_param(self, out_, in_):
-        param_dict = {"lambda_": self.lambda_, "mu": self.mu}
-        x, y = in_["x"], in_["y"]
-        u, v = out_["u"], out_["v"]
-        param_dict["u__x"] = jacobian(u, x).detach().clone()
-        param_dict["u__y"] = jacobian(u, y).detach().clone()
-        param_dict["v__x"] = jacobian(v, x).detach().clone()
-        param_dict["v__y"] = jacobian(v, y).detach().clone()
-        ppsci.autodiff.clear()
-        if self.dim == 3:
-            z = in_["z"]
-            w = out_["w"]
-            param_dict["u__z"] = jacobian(u, z).detach().clone()
-            param_dict["v__z"] = jacobian(v, z).detach().clone()
-            param_dict["w__x"] = jacobian(w, x).detach().clone()
-            param_dict["w__y"] = jacobian(w, y).detach().clone()
-            param_dict["w__z"] = jacobian(w, z).detach().clone()
-            ppsci.autodiff.clear()
-        return ppsci.equation.EnergyEquation(param_dict, self.dim)
-
     def disp_loss_func(self, output_dict, label_dict=None, weight_dict={}):
         input_dict = {"x": output_dict["x"], "y": output_dict["y"]}
         if self.dim == 3:
@@ -265,20 +244,11 @@ class Problems:
         densities_list = []
         sensitivities_list = []
         input_dicts_list = []
+        if isinstance(output_dicts_list, Dict):
+            output_dicts_list = [[output_dicts_list]]
         for output_dict in output_dicts_list:
-            input_dict = {"x": output_dict[0]["x"], "y": output_dict[0]["y"]}
-            if self.dim == 3:
-                input_dict["z"] = output_dict[0]["z"]
-            input_dicts_list.append(input_dict)
             densities = output_dict[0]["densities"]
-            output_dict_disp = self.disp_net(input_dict)
-            energy_no_backward = self.gen_energy_equation_param(
-                output_dict_disp, input_dict
-            )
-            energy = energy_no_backward.equations["energy"]({})
-            # energy = self.equation["EnergyEquation"].equations["energy"](
-            #     {**self.disp_net(input_dict), **input_dict}
-            # )  # TODO: OOM
+            energy = output_dict[0]["energy"]
             ppsci.autodiff.clear()
 
             loss_energy = self.compute_energy(densities, energy)
@@ -299,8 +269,14 @@ class Problems:
             sensitivities_list.append(sensitivities)
             ppsci.autodiff.clear()
 
+            if self.use_mmse:
+                input_dict = {"x": output_dict[0]["x"], "y": output_dict[0]["y"]}
+                if self.dim == 3:
+                    input_dict["z"] = output_dict[0]["z"]
+                input_dicts_list.append(input_dict)
+
         if not self.use_mmse:
-            return loss_list
+            return loss_list[0]
         else:
             target_densities_list = self.compute_target_densities(
                 densities_list, sensitivities_list

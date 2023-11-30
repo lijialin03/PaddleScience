@@ -12,14 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import Union
 
 import numpy as np
 import paddle
+import sympy
 from paddle import nn
 from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from skimage import measure
@@ -27,10 +33,15 @@ from skimage import measure
 import ppsci
 from ppsci import geometry
 from ppsci.autodiff import clear
+from ppsci.constraint import base
+from ppsci.data import dataset
 from ppsci.solver import Solver
 from ppsci.utils import logger
 from ppsci.utils import misc
 from ppsci.utils import save_load
+
+if TYPE_CHECKING:
+    from ppsci import loss
 
 
 class Trainer:
@@ -410,12 +421,14 @@ class Sampler:
         self,
         geom: geometry.Geometry,
         bounds: Tuple[Tuple[float, float], ...],
+        n_samples: Tuple[int, ...],
         criteria: Optional[Callable] = None,
     ) -> None:
         self.geom = geom
         self.dim = geom.ndim
         self.dim_keys = geom.dim_keys
         self.bounds = bounds
+        self.n_samples = n_samples
         self.criteria = criteria
 
     def stratified_random(self, n_samples: Tuple[int, ...]) -> np.ndarray:
@@ -434,8 +447,11 @@ class Sampler:
             grid_points[:, i] = (grid_points[:, i] + random) * grid_size
         return grid_points
 
-    def sample_interior_stratified(self, n_samples: Tuple[int, ...], n_iter: int):
+    def sample_interior_stratified(
+        self, n_iter: int, n_samples: Tuple[int, ...] = None
+    ):
         """Sample random points in the geometry and return those meet criteria."""
+        n_samples = self.n_samples if not n_samples else n_samples
         points = self.stratified_random(n_samples)
         for _ in range(1, n_iter):
             points = np.concatenate((points, self.stratified_random(n_samples)), axis=0)
@@ -451,3 +467,102 @@ class Sampler:
             points_dict[self.dim_keys[i]] = points[:, i].reshape([-1, 1])
 
         return points_dict, criteria_mask
+
+
+class StratifiedInteriorConstraint(base.Constraint):
+    """Class for stratified interior constraint."""
+
+    def __init__(
+        self,
+        output_expr: Dict[str, Callable],
+        label_dict: Dict[str, Union[float, Callable]],
+        geom: geometry.Geometry,
+        dataloader_cfg: Dict[str, Any],
+        sampler: Sampler,
+        loss: "loss.Loss",
+        criteria: Optional[Callable] = None,
+        weight_dict: Optional[Dict[str, Union[Callable, float]]] = None,
+        name: str = "EQ",
+    ):
+        self.label_dict = label_dict
+        self.input_keys = geom.dim_keys
+        self.output_keys = tuple(label_dict.keys())
+        self.output_expr = {
+            k: v for k, v in output_expr.items() if k in self.output_keys
+        }
+        # "area" will be kept in "output_dict" for computation.
+        if isinstance(geom, geometry.Mesh):
+            self.output_keys += ("area",)
+
+        if isinstance(criteria, str):
+            criteria = eval(criteria)
+
+        # prepare input
+        input, mask = sampler.sample_interior_stratified(
+            n_iter=dataloader_cfg["iters_per_epoch"]
+        )  # TODO: Use mask to filter samples that do not need to participate in loss calculation
+
+        dataloader_cfg["batch_size"] = int(np.prod(dataloader_cfg["batch_size"]))
+
+        # prepare label
+        label = {}
+        for key, value in label_dict.items():
+            if isinstance(value, (int, float)):
+                label[key] = np.full_like(next(iter(input.values())), value)
+            elif isinstance(value, sympy.Basic):
+                func = sympy.lambdify(
+                    sympy.symbols(geom.dim_keys),
+                    value,
+                    [{"amax": lambda xy, _: np.maximum(xy[0], xy[1])}, "numpy"],
+                )
+                label[key] = func(
+                    **{k: v for k, v in input.items() if k in geom.dim_keys}
+                )
+            elif callable(value):
+                func = value
+                label[key] = func(input)
+                if isinstance(label[key], (int, float)):
+                    label[key] = np.full_like(next(iter(input.values())), label[key])
+            else:
+                raise NotImplementedError(f"type of {type(value)} is invalid yet.")
+
+        # prepare weight
+        weight = {key: np.ones_like(next(iter(label.values()))) for key in label}
+        if weight_dict is not None:
+            for key, value in weight_dict.items():
+                if isinstance(value, str):
+                    if value == "sdf":
+                        weight[key] = input["sdf"]
+                    else:
+                        raise NotImplementedError(f"string {value} is invalid yet.")
+                elif isinstance(value, (int, float)):
+                    weight[key] = np.full_like(next(iter(label.values())), float(value))
+                elif isinstance(value, sympy.Basic):
+                    func = sympy.lambdify(
+                        sympy.symbols(geom.dim_keys),
+                        value,
+                        [{"amax": lambda xy, _: np.maximum(xy[0], xy[1])}, "numpy"],
+                    )
+                    weight[key] = func(
+                        **{k: v for k, v in input.items() if k in geom.dim_keys}
+                    )
+                elif callable(value):
+                    func = value
+                    weight[key] = func(input)
+                    if isinstance(weight[key], (int, float)):
+                        weight[key] = np.full_like(
+                            next(iter(input.values())), weight[key]
+                        )
+                else:
+                    raise NotImplementedError(f"type of {type(value)} is invalid yet.")
+
+        # wrap input, label, weight into a dataset
+        if isinstance(dataloader_cfg["dataset"], str):
+            dataloader_cfg["dataset"] = {"name": dataloader_cfg["dataset"]}
+        dataloader_cfg["dataset"].update(
+            {"input": input, "label": label, "weight": weight}
+        )
+        _dataset = dataset.build_dataset(dataloader_cfg["dataset"])
+
+        # construct dataloader with dataset and dataloader_cfg
+        super().__init__(_dataset, dataloader_cfg, loss, name)

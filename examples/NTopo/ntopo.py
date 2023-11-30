@@ -37,6 +37,9 @@ def train(cfg: DictConfig):
     problem.density_net.register_input_transform(problem.transform_in)
     problem.density_net.register_output_transform(problem.transform_out_density)
 
+    # wrap to a model_list
+    model_list = ppsci.arch.ModelList((problem.disp_net, problem.density_net))
+
     # set optimizer
     optimizer_disp = ppsci.optimizer.Adam(**cfg.TRAIN.disp_net.optimizer)(
         problem.disp_net
@@ -52,7 +55,9 @@ def train(cfg: DictConfig):
     )
     if problem.dim == 3:
         bounds += ((problem.geo_origin[2], problem.geo_dim[2]),)
-    sampler = func_module.Sampler(problem.geom["geo"], bounds=bounds)
+    sampler = func_module.Sampler(
+        problem.geom["geo"], bounds=bounds, n_samples=problem.batch_size
+    )
     batch_size = int(np.prod(problem.batch_size))
 
     # set keys
@@ -92,7 +97,6 @@ def train(cfg: DictConfig):
             "batch_size": batch_size,
             "iters_per_epoch": cfg.TRAIN.disp_net.iters_per_epoch,
         },
-        # ppsci.loss.MSELoss(loss_str),
         ppsci.loss.FunctionalLoss(problem.disp_loss_func),
         name="INTERIOR_DISP",
     )
@@ -104,48 +108,27 @@ def train(cfg: DictConfig):
     # wrap constraints together
     constraint_disp = {interior_disp.name: interior_disp}
 
-    input, mask = sampler.sample_interior_stratified(
-        n_samples=problem.batch_size,
-        n_iter=cfg.TRAIN.density_net.iters_per_epoch,
-    )  # TODO: Use mask to filter samples that do not need to participate in loss calculation
-    interior_density = ppsci.constraint.SupervisedConstraint(
-        {
-            "dataset": {"name": "NamedArrayDataset", "input": input},
-            "sampler": {
-                "name": "BatchSampler",
-                "drop_last": True,
-                "shuffle": False,
-            },
-            "num_workers": 1,
-            "batch_size": batch_size,
-        },
-        ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
+    interior_density = func_module.StratifiedInteriorConstraint(
         {
             "densities": lambda out: out["densities"],
+            **problem.equation["EnergyEquation"].equations,
             **output_expr,
         },
+        {
+            "densities": 0,
+            "energy": 0,
+            **{key: 0 for key in pred_input_keys},
+        },
+        problem.geom["geo"],
+        {
+            **train_dataloader_cfg,
+            "batch_size": batch_size,
+            "iters_per_epoch": cfg.TRAIN.density_net.iters_per_epoch,
+        },
+        sampler,
+        ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
         name="INTERIOR_DENSITY",
     )
-
-    # interior_density = ppsci.constraint.InteriorConstraint(
-    #     {
-    #         "densities": lambda out: out["densities"],
-    #     },
-    #     {"densities": 0},
-    #     problem.geom["geo"],
-    #     {
-    #         **train_dataloader_cfg,
-    #         "batch_size": batch_size,
-    #         "iters_per_epoch": cfg.TRAIN.density_net.iters_per_epoch,
-    #     },
-    #     # ppsci.loss.MSELoss(loss_str),
-    #     ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
-    #     {
-    #         "densities": lambda out: out["densities"],
-    #         **output_expr,
-    #     },
-    #     name="INTERIOR_DENSITY",
-    # )
 
     constraint_density = {interior_density.name: interior_density}
 
@@ -195,7 +178,7 @@ def train(cfg: DictConfig):
     )
 
     solver_density = ppsci.solver.Solver(
-        model=problem.density_net,
+        model=model_list,
         constraint=constraint_density,
         output_dir=cfg.output_dir_density,
         optimizer=optimizer_density,
@@ -221,31 +204,6 @@ def train(cfg: DictConfig):
 
     for i in range(1, cfg.TRAIN.epochs + 1):
         ppsci.utils.logger.info(f"\nEpoch: {i}\n")
-
-        input, _ = sampler.sample_interior_stratified(
-            n_samples=problem.batch_size,
-            n_iter=cfg.TRAIN.density_net.iters_per_epoch,
-        )  # TODO: Use mask to filter samples that do not need to participate in loss calculation
-
-        interior_density = ppsci.constraint.SupervisedConstraint(
-            {
-                "dataset": {"name": "NamedArrayDataset", "input": input},
-                "sampler": {
-                    "name": "BatchSampler",
-                    "drop_last": True,
-                    "shuffle": False,
-                },
-                "num_workers": 1,
-                "batch_size": batch_size,
-            },
-            ppsci.loss.FunctionalLossBatch(problem.density_loss_func),
-            {
-                "densities": lambda out: out["densities"],
-                **output_expr,
-            },
-            name="INTERIOR_DENSITY",
-        )
-        solver_density.constraint["INTERIOR_DENSITY"] = interior_density
 
         solver_disp.train()
         if cfg.USE_MMSE:
