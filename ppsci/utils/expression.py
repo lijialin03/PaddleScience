@@ -113,6 +113,7 @@ class ExpressionSolver(nn.Layer):
                 output_dict,
                 label_dicts[i],
                 weight_dicts[i],
+                input_dicts[i],
             )
             # update losses into 'losses_all' and 'losses_constraint'
             # 'losses_all': Will be send to loss aggregator for further computing final loss(scalar)
